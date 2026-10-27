@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   // Load all environment variables from .env and .env.local without filtering
   const env = loadEnv(mode, process.cwd(), '');
 
-  const base = process.env.GITHUB_ACTIONS || process.env.GITHUB_PAGES ? '/DTIL/' : (process.env.VITE_BASE || '/');
+  const base = process.env.GITHUB_ACTIONS || process.env.GITHUB_PAGES ? '/DTIL-Project/' : (process.env.VITE_BASE || '/');
 
   return {
     base,
