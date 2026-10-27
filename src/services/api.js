@@ -26,6 +26,7 @@ import {
   mockAdminStats,
   mockFeeDetails
 } from '../data/mockData';
+import { processAttendanceVerification } from './attendanceVerificationService.js';
 
 // Simulated network delay helper
 const delay = (ms = 180) => new Promise(resolve => setTimeout(resolve, ms));
@@ -34,27 +35,96 @@ const delay = (ms = 180) => new Promise(resolve => setTimeout(resolve, ms));
 // 1. AUTHENTICATION & SESSION
 // ==========================================
 
+import { supabase, isSupabaseConfigured } from './supabaseClient';
+
 /**
  * Login user with role
- * BACKEND ROUTE: POST /api/auth/login
+ * Checks Supabase Auth first, maps to profiles table, and falls back to demo accounts
  * Body: { email, password, role }
- * Returns: { user: { id, name, email, role, ... }, token: "jwt_token_here" }
+ * Returns: { user: { id, studentId, name, email, role, ... }, token: "jwt_token_here" }
  */
 export async function loginUser(email, password, role) {
-  await delay();
-  // TODO: Replace with:
-  // const response = await fetch('/api/auth/login', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ email, password, role })
-  // });
-  // return await response.json();
-
   if (!email || !password || !role) {
     throw new Error('Please provide email, password, and select a role.');
   }
 
-  // Demo user lookup based on role
+  const cleanEmail = email.trim();
+
+  // 1. If Supabase is configured, authenticate via Supabase Auth
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password
+      });
+
+      if (!authError && authData?.user) {
+        // Query profile details from profiles table
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .maybeSingle();
+
+        const userRole = profile?.role || authData.user.user_metadata?.role || 'student';
+
+        // Guard against role mismatch (e.g. student logging into admin portal)
+        if (role && userRole !== role) {
+          throw new Error(
+            `Access Denied: Your account role is "${userRole}", but you are attempting to sign in to the "${role.toUpperCase()}" portal.`
+          );
+        }
+
+        const userObj = {
+          id: authData.user.id,
+          studentId: profile?.student_id || authData.user.user_metadata?.student_id || authData.user.id,
+          name: profile?.name || authData.user.user_metadata?.name || cleanEmail.split('@')[0],
+          email: profile?.email || authData.user.email,
+          role: userRole,
+          phone: profile?.phone || '',
+          department: profile?.department || 'Information Technology',
+          year: profile?.year || '1st Year',
+          hostel: profile?.hostel || 'Vikramshilla Boys Hostel',
+          room: profile?.room || '201',
+          bed: profile?.bed || 'Bed A',
+          attendanceRate: profile?.attendance_rate ?? 100,
+          pendingFees: profile?.pending_fees ?? 0,
+          referenceFacePhoto: profile?.reference_face_photo_path || null,
+          status: profile?.status || 'Active'
+        };
+
+        return {
+          token: authData.session?.access_token || 'supabase-session-token',
+          user: userObj
+        };
+      } else if (authError) {
+        // Check if demo fallback credentials were used
+        const isDemoAccount = (
+          (cleanEmail === 'admin@hostel.com' && role === 'admin') ||
+          (cleanEmail === 'warden@hostel.com' && role === 'warden') ||
+          (cleanEmail === 'student@hostel.com' && role === 'student')
+        ) && password === 'demo123';
+
+        if (!isDemoAccount) {
+          throw new Error(authError.message || 'Invalid email or password.');
+        }
+      }
+    } catch (err) {
+      const isDemoAccount = (
+        (cleanEmail === 'admin@hostel.com' && role === 'admin') ||
+        (cleanEmail === 'warden@hostel.com' && role === 'warden') ||
+        (cleanEmail === 'student@hostel.com' && role === 'student')
+      ) && password === 'demo123';
+
+      if (!isDemoAccount) {
+        throw err;
+      }
+    }
+  }
+
+  await delay(150);
+
+  // 2. Demo fallback for evaluation
   if (role === 'admin') {
     return {
       token: 'demo-jwt-admin-token-xyz',
@@ -62,7 +132,7 @@ export async function loginUser(email, password, role) {
         id: 'ADM-001',
         name: 'Prof. V. K. Deshpande',
         role: 'admin',
-        email: email || 'admin@hostel.com',
+        email: cleanEmail || 'admin@hostel.com',
         designation: 'Chief Warden & Director of Student Housing',
         department: 'Campus Administration',
         phone: '+91 98765 43210'
@@ -75,21 +145,20 @@ export async function loginUser(email, password, role) {
         id: 'W101',
         name: 'Satish Sir',
         role: 'warden',
-        email: email || 'warden@hostel.com',
+        email: cleanEmail || 'warden@hostel.com',
         hostel: 'Vikramshilla Boys Hostel',
         department: 'Mechanical Engg.',
         phone: '+91 98234 56789'
       }
     };
   } else {
-    // Default to student
     return {
       token: 'demo-jwt-student-token-xyz',
       user: {
         id: 'STU-2024-001',
         name: 'Vinay Korde',
         role: 'student',
-        email: email || 'student@hostel.com',
+        email: cleanEmail || 'student@hostel.com',
         hostel: 'Vikramshila Boys Hostel',
         room: 'V-616',
         bed: 'Bed A',
@@ -108,8 +177,14 @@ export async function loginUser(email, password, role) {
  * BACKEND ROUTE: POST /api/auth/logout
  */
 export async function logoutUser() {
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Supabase signOut notice:', err.message);
+    }
+  }
   await delay(100);
-  // TODO: Replace with API call to invalidate JWT/session if server-side tracking is used
   return { success: true };
 }
 
@@ -285,6 +360,16 @@ export async function getAttendance(date, hostel) {
 export async function markAttendance(payload) {
   await delay();
   return { success: true, updatedCount: payload.records?.length || 0 };
+}
+
+/**
+ * Verify student presence (Face + Geofence) and atomically mark attendance
+ * BACKEND ROUTE: POST /api/attendance/verify-presence
+ * Body: { studentId, liveImage, locationData, hostelSettings, ... }
+ */
+export async function verifyAttendancePresence(payload) {
+  await delay(250);
+  return await processAttendanceVerification(payload);
 }
 
 // ==========================================

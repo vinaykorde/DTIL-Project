@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { CalendarCheck, Check, X, Filter, Save, Users } from 'lucide-react';
@@ -22,16 +22,17 @@ export default function WardenAttendance() {
   // Unique rooms in this hostel
   const roomsInHostel = Array.from(new Set(students.filter(s => s.hostel === selectedHostel).map(s => s.room))).sort();
 
-  // Local state for attendance toggles
-  const [attendanceMap, setAttendanceMap] = useState(() => {
+  // Local state for attendance toggles synced with database
+  const [attendanceMap, setAttendanceMap] = useState({});
+
+  useEffect(() => {
     const map = {};
     students.forEach(s => {
-      // Find existing status or default to Present
-      const existing = attendance.find(a => a.studentId === s.id);
+      const existing = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
       map[s.id] = existing ? existing.status : 'Present';
     });
-    return map;
-  });
+    setAttendanceMap(map);
+  }, [selectedDate, attendance, students]);
 
   const toggleStatus = (studentId) => {
     setAttendanceMap(prev => ({

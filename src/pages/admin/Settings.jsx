@@ -44,12 +44,34 @@ export default function AdminSettings() {
 
   const handleSave = (e) => {
     e.preventDefault();
+    const lat = parseFloat(locationSettings.latitude);
+    const lon = parseFloat(locationSettings.longitude);
+    const radius = parseFloat(locationSettings.radius);
+    const maxAccuracy = parseFloat(locationSettings.maxAccuracy);
+
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      showToast('Hostel latitude must be between -90 and 90 degrees.', 'warning');
+      return;
+    }
+    if (isNaN(lon) || lon < -180 || lon > 180) {
+      showToast('Hostel longitude must be between -180 and 180 degrees.', 'warning');
+      return;
+    }
+    if (isNaN(radius) || radius <= 0) {
+      showToast('Allowed radius must be a positive number in meters.', 'warning');
+      return;
+    }
+    if (isNaN(maxAccuracy) || maxAccuracy <= 0) {
+      showToast('Max accuracy threshold must be a positive number in meters.', 'warning');
+      return;
+    }
+
     updateHostelSettings({
       name: locationSettings.name,
-      latitude: parseFloat(locationSettings.latitude),
-      longitude: parseFloat(locationSettings.longitude),
-      radius: parseFloat(locationSettings.radius),
-      maxAccuracy: parseFloat(locationSettings.maxAccuracy)
+      latitude: lat,
+      longitude: lon,
+      radius: radius,
+      maxAccuracy: maxAccuracy
     });
     showToast('System configuration settings saved successfully.', 'success');
   };

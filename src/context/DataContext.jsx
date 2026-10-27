@@ -19,8 +19,10 @@ import {
   deleteNotice as apiDeleteNotice,
   createRoom as apiCreateRoom,
   registerVisitor as apiRegisterVisitor,
-  markAttendance as apiMarkAttendance
+  markAttendance as apiMarkAttendance,
+  verifyAttendancePresence
 } from '../services/api';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 const DataContext = createContext(null);
 
@@ -62,6 +64,52 @@ export function DataProvider({ children }) {
   useEffect(() => { localStorage.setItem('dtil_attendance', JSON.stringify(attendance)); }, [attendance]);
   useEffect(() => { localStorage.setItem('dtil_hostel_settings', JSON.stringify(hostelSettings)); }, [hostelSettings]);
   useEffect(() => { localStorage.setItem('dtil_presence_records', JSON.stringify(presenceRecords)); }, [presenceRecords]);
+
+  // Synchronize student records from Supabase profiles when connected
+  useEffect(() => {
+    let isMounted = true;
+    async function syncSupabaseProfiles() {
+      if (!isSupabaseConfigured()) return;
+      try {
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'student');
+
+        if (!error && Array.isArray(profiles) && profiles.length > 0 && isMounted) {
+          const mapped = profiles.map(p => ({
+            id: p.student_id || p.id,
+            authUserId: p.id,
+            name: p.name,
+            email: p.email,
+            phone: p.phone || '',
+            department: p.department || 'Information Technology',
+            year: p.year || '1st Year',
+            hostel: p.hostel || 'Vikramshilla Boys Hostel',
+            room: p.room || '201',
+            bed: p.bed || 'Bed A',
+            status: p.status || 'Active',
+            attendanceRate: p.attendance_rate ?? 100,
+            pendingFees: p.pending_fees ?? 0,
+            referenceFacePhoto: p.reference_face_photo_path || null
+          }));
+
+          setStudents(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const existingEmails = new Set(prev.map(s => s.email?.toLowerCase()));
+            const toAdd = mapped.filter(m => !existingIds.has(m.id) && !existingEmails.has(m.email?.toLowerCase()));
+            if (toAdd.length === 0) return prev;
+            return [...toAdd, ...prev];
+          });
+        }
+      } catch (err) {
+        console.debug('Supabase student sync note:', err.message);
+      }
+    }
+
+    syncSupabaseProfiles();
+    return () => { isMounted = false; };
+  }, []);
 
   const showToast = (message, type = 'success') => {
     setToastMessage({ message, type, id: Date.now() });
@@ -142,6 +190,35 @@ export function DataProvider({ children }) {
     showToast(`Student record updated successfully`, 'success');
   };
 
+  const addStudentAccounts = (newAccounts) => {
+    if (!Array.isArray(newAccounts) || newAccounts.length === 0) return;
+    const formatted = newAccounts.map(acc => ({
+      id: acc.studentId || acc.student_id || acc.id || `STU-2024-${Math.floor(100 + Math.random() * 900)}`,
+      authUserId: acc.userId || acc.authUserId || null,
+      name: acc.name,
+      email: acc.email,
+      phone: acc.phone || '',
+      department: acc.department || 'Information Technology',
+      year: acc.year || '1st Year',
+      hostel: acc.hostel || 'Vikramshilla Boys Hostel',
+      room: acc.room || '201',
+      bed: acc.bed || 'Bed A',
+      status: acc.status || 'Active',
+      attendanceRate: 100,
+      pendingFees: 0,
+      referenceFacePhoto: null
+    }));
+
+    setStudents(prev => {
+      const existingIds = new Set(prev.map(s => s.id));
+      const existingEmails = new Set(prev.map(s => s.email?.toLowerCase()));
+      const uniqueNew = formatted.filter(f => !existingIds.has(f.id) && !existingEmails.has(f.email?.toLowerCase()));
+      return [...uniqueNew, ...prev];
+    });
+
+    showToast(`Added ${newAccounts.length} new student account(s) to directory.`, 'success');
+  };
+
   const deleteStudent = (id) => {
     setStudents(prev => prev.filter(s => s.id !== id));
     showToast(`Student record deleted`, 'warning');
@@ -186,8 +263,46 @@ export function DataProvider({ children }) {
     return newRecord;
   };
 
+  const verifyAndRecordPresence = async ({ studentId, liveImage, locationData, currentUser }) => {
+    const result = await verifyAttendancePresence({
+      studentId,
+      liveImage,
+      locationData,
+      hostelSettings,
+      students,
+      attendanceRecords: attendance,
+      currentUser
+    });
+
+    if (result.presenceRecord) {
+      setPresenceRecords(prev => [result.presenceRecord, ...prev]);
+    }
+
+    if (result.success && result.attendanceRecord && !result.duplicate) {
+      setAttendance(prev => {
+        const dateStr = result.attendanceRecord.date;
+        const filtered = prev.filter(a => !(a.studentId === studentId && a.date === dateStr));
+        return [result.attendanceRecord, ...filtered];
+      });
+      showToast('Attendance verified and marked successfully!', 'success');
+    } else if (result.success && result.duplicate) {
+      showToast('Attendance was already marked for today.', 'info');
+    } else {
+      showToast(result.message || 'Verification failed.', 'warning');
+    }
+
+    return result;
+  };
+
   const updateHostelSettings = (newSettings) => {
-    setHostelSettings(prev => ({ ...prev, ...newSettings }));
+    setHostelSettings(prev => ({
+      ...prev,
+      ...newSettings,
+      latitude: Number(newSettings.latitude !== undefined ? newSettings.latitude : prev.latitude),
+      longitude: Number(newSettings.longitude !== undefined ? newSettings.longitude : prev.longitude),
+      radius: Number(newSettings.radius !== undefined ? newSettings.radius : prev.radius),
+      maxAccuracy: Number(newSettings.maxAccuracy !== undefined ? newSettings.maxAccuracy : prev.maxAccuracy)
+    }));
     showToast('Hostel location settings updated.', 'success');
   };
 
@@ -225,11 +340,13 @@ export function DataProvider({ children }) {
     deleteNotice,
     addRoom,
     addStudent,
+    addStudentAccounts,
     updateStudent,
     deleteStudent,
     addVisitor,
     recordAttendance,
     addPresenceRecord,
+    verifyAndRecordPresence,
     updateHostelSettings,
     resetToMockData
   };

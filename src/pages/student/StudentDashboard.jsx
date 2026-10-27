@@ -27,10 +27,12 @@ import DashboardCard from '../../components/common/DashboardCard';
 import StatusBadge from '../../components/common/StatusBadge';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
+import { analyzeImageQuality, detectFacePresence, loadFaceApiModels } from '../../services/faceVerification';
+import { getCurrentDeviceLocation, getRefinedDeviceLocation } from '../../services/geolocationService';
 
 export default function StudentDashboard() {
-  const { user } = useAuth();
-  const { complaints, notices, addComplaint, students, hostelSettings, addPresenceRecord } = useData();
+  const { user, switchRole } = useAuth();
+  const { complaints, notices, addComplaint, students, hostelSettings, verifyAndRecordPresence } = useData();
   const navigate = useNavigate();
 
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
@@ -40,29 +42,69 @@ export default function StudentDashboard() {
     description: ''
   });
 
-  // Presence Verification State
+  // Presence Verification State & Retry Handling
   const [isPresenceModalOpen, setIsPresenceModalOpen] = useState(false);
   const [presenceStep, setPresenceStep] = useState('CAPTURE'); // CAPTURE, PROCESSING, RESULT
   const [presenceResult, setPresenceResult] = useState(null);
+  const [attemptsCount, setAttemptsCount] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState(null);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [locationProgressMessage, setLocationProgressMessage] = useState(null);
   
+  // Real-time verification checklist status for display
+  const [stepIndicators, setStepIndicators] = useState({
+    cameraReady: false,
+    selfieCaptured: false,
+    imageQuality: 'pending', // 'pending' | 'success' | 'failed'
+    locationDetected: 'pending',
+    accuracyCheck: 'pending',
+    geofenceCheck: 'pending',
+    faceVerification: 'pending',
+    finalAttendance: 'pending'
+  });
+
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
 
+  // Pre-load biometric models in background when dashboard mounts
+  useEffect(() => {
+    loadFaceApiModels().catch(err => console.warn('Biometric model pre-load info:', err));
+  }, []);
+
   const startPresenceCamera = async () => {
+    setIsCameraReady(false);
     setIsPresenceModalOpen(true);
     setPresenceStep('CAPTURE');
     setPresenceResult(null);
+    setStepIndicators({
+      cameraReady: false,
+      selfieCaptured: false,
+      imageQuality: 'pending',
+      locationDetected: 'pending',
+      accuracyCheck: 'pending',
+      geofenceCheck: 'pending',
+      faceVerification: 'pending',
+      finalAttendance: 'pending'
+    });
+
+    // Make sure models are loaded or loading
+    loadFaceApiModels().catch(err => console.warn('Model load info on camera start:', err));
+
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+      });
       setStream(mediaStream);
     } catch (err) {
       console.error("Error accessing camera:", err);
       setPresenceResult({
         success: false,
-        title: 'CAMERA PERMISSION REQUIRED',
-        message: 'Camera permission is required to capture your live selfie.',
-        details: null
+        title: 'CAMERA UNAVAILABLE',
+        errorCode: 'CAMERA_UNAVAILABLE',
+        message: 'Camera permission is required or camera device is unavailable. Please enable camera access in your browser settings.',
+        details: { failureStep: 'Camera Hardware' },
+        indicators: { cameraReady: false, selfieCaptured: false, finalAttendance: 'failed' }
       });
       setPresenceStep('RESULT');
     }
@@ -73,6 +115,7 @@ export default function StudentDashboard() {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
+    setIsCameraReady(false);
   };
 
   useEffect(() => {
@@ -81,120 +124,237 @@ export default function StudentDashboard() {
     }
   }, [stream, presenceStep]);
 
-  // Haversine distance formula
-  const getDistanceFromLatLonInM = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Radius of the earth in m
-    const dLat = (lat2 - lat1) * Math.PI / 180;  
-    const dLon = (lon2 - lon1) * Math.PI / 180; 
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-    return Math.floor(R * c);
-  };
+  const verifyPresence = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
 
-  const verifyPresence = () => {
-    // 1. Capture photo (simulate visual capture)
-    if (videoRef.current && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      canvasRef.current.width = videoRef.current.videoWidth;
-      canvasRef.current.height = videoRef.current.videoHeight;
-      ctx.drawImage(videoRef.current, 0, 0);
+    // Verify video stream readiness
+    if (video.readyState < 2 || video.videoWidth === 0) {
+      setPresenceResult({
+        success: false,
+        title: 'CAMERA NOT READY',
+        errorCode: 'CAMERA_NOT_READY',
+        message: 'Camera stream is still initializing. Please hold steady and try again.',
+        details: { failureStep: 'Camera Hardware' },
+        indicators: { cameraReady: false, selfieCaptured: false, finalAttendance: 'failed' }
+      });
+      setPresenceStep('RESULT');
+      return;
     }
+
+    // 1. Capture live frame to canvas
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+
     stopPresenceCamera();
     setPresenceStep('PROCESSING');
-    
-    // 2. Fetch current student record
-    const currentStudent = students.find(s => s.id === (user?.id || 'STU-2024-001'));
-    if (!currentStudent || !currentStudent.referenceFacePhoto) {
+    setStepIndicators(prev => ({ ...prev, selfieCaptured: true }));
+
+    // 2. Perform Image Quality Analysis (Blur & Brightness)
+    const qualityResult = analyzeImageQuality(canvas);
+    if (!qualityResult.valid) {
+      setStepIndicators(prev => ({ ...prev, imageQuality: 'failed' }));
+      const qualityTitle = qualityResult.error === 'IMAGE_TOO_DARK' ? 'IMAGE TOO DARK'
+        : qualityResult.error === 'IMAGE_TOO_BRIGHT' ? 'IMAGE TOO BRIGHT'
+        : qualityResult.error === 'EMPTY_IMAGE' ? 'EMPTY CAMERA FRAME'
+        : 'IMAGE BLURRY';
+
       setPresenceResult({
         success: false,
-        title: 'IDENTITY NOT VERIFIED',
-        message: 'No registered reference face found for your account. Please contact the Warden to register your face.',
-        details: { faceMatch: 'Failed' }
-      });
-      setPresenceStep('RESULT');
-      return;
-    }
-
-    // 3. Get Geolocation
-    if (!navigator.geolocation) {
-      setPresenceResult({
-        success: false,
-        title: 'LOCATION NOT SUPPORTED',
-        message: 'Your browser does not support geolocation.',
-        details: null
-      });
-      setPresenceStep('RESULT');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition((position) => {
-      const { latitude, longitude, accuracy } = position.coords;
-      
-      const maxAccuracy = hostelSettings?.maxAccuracy || 50;
-      if (accuracy > maxAccuracy) {
-        setPresenceResult({
-          success: false,
-          title: 'LOCATION ACCURACY TOO LOW',
-          message: `Location accuracy is too low (±${Math.floor(accuracy)}m). Maximum allowed is ±${maxAccuracy}m. Please enable precise location and try again.`,
-          details: { faceMatch: 'Verified' }
-        });
-        setPresenceStep('RESULT');
-        return;
-      }
-
-      const hLat = hostelSettings?.latitude || 18.5204;
-      const hLon = hostelSettings?.longitude || 73.8567;
-      const radius = hostelSettings?.radius || 100;
-
-      const distance = getDistanceFromLatLonInM(latitude, longitude, hLat, hLon);
-      const isInside = distance <= radius;
-
-      const result = {
-        success: isInside,
-        title: isInside ? 'PRESENCE VERIFIED' : 'PRESENCE NOT VERIFIED',
-        message: isInside ? 'Your presence has been successfully verified.' : 'You are outside the configured hostel geofence.',
+        title: qualityTitle,
+        errorCode: qualityResult.error,
+        message: qualityResult.message,
         details: {
-          faceMatch: 'Verified',
-          latitude,
-          longitude,
-          distance,
-          accuracy: Math.floor(accuracy),
-          status: isInside ? 'PRESENT' : 'OUTSIDE HOSTEL'
+          brightness: qualityResult.metrics?.brightness,
+          blurScore: qualityResult.metrics?.blurScore,
+          failureStep: 'Image Quality'
+        },
+        indicators: {
+          cameraReady: true,
+          selfieCaptured: true,
+          imageQuality: 'failed',
+          locationDetected: 'skipped',
+          faceVerification: 'skipped',
+          geofenceCheck: 'skipped',
+          finalAttendance: 'failed'
         }
-      };
-
-      // Save to DataContext
-      addPresenceRecord({
-        studentId: currentStudent.id,
-        studentName: currentStudent.name,
-        latitude,
-        longitude,
-        locationAccuracy: Math.floor(accuracy),
-        distanceFromHostel: distance,
-        faceMatchStatus: 'VERIFIED',
-        locationStatus: isInside ? 'INSIDE' : 'OUTSIDE',
-        verificationStatus: isInside ? 'PRESENT' : 'OUTSIDE HOSTEL'
       });
-
-      setPresenceResult(result);
       setPresenceStep('RESULT');
+      return;
+    }
+    setStepIndicators(prev => ({ ...prev, imageQuality: 'success' }));
 
-    }, (error) => {
+    // 3. Face Presence Check in Selfie
+    const facePresence = await detectFacePresence(canvas);
+    if (facePresence.error) {
+      const faceTitle = facePresence.error === 'MULTIPLE_FACES_DETECTED'
+        ? 'MULTIPLE FACES DETECTED'
+        : 'NO FACE DETECTED';
+
       setPresenceResult({
         success: false,
-        title: 'LOCATION PERMISSION REQUIRED',
-        message: 'Location permission is required to verify your hostel presence. Please enable location services and try again.',
-        details: null
+        title: faceTitle,
+        errorCode: facePresence.error,
+        message: facePresence.message || (facePresence.error === 'MULTIPLE_FACES_DETECTED'
+          ? `Multiple faces detected (${facePresence.faceCount}). Please ensure only you are visible in the photo.`
+          : 'No face detected in the photo. Please center your face in the camera.'),
+        details: {
+          faceCount: facePresence.faceCount,
+          failureStep: 'Face Presence Detection'
+        },
+        indicators: {
+          cameraReady: true,
+          selfieCaptured: true,
+          imageQuality: 'success',
+          faceDetected: false,
+          faceVerification: 'failed',
+          finalAttendance: 'failed'
+        }
       });
       setPresenceStep('RESULT');
-    }, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
+      return;
+    }
+
+    // 4. Retrieve Fresh Device Coordinates from Geolocation API with progressive accuracy refinement
+    setStepIndicators(prev => ({ ...prev, locationDetected: 'processing' }));
+    setLocationProgressMessage('Connecting to device GPS...');
+    const maxAllowedAccuracy = hostelSettings?.maxAccuracy || 50;
+
+    const locationResp = await getRefinedDeviceLocation({
+      maxAccuracy: maxAllowedAccuracy,
+      timeoutMs: 8000,
+      onProgress: (status) => {
+        setLocationProgressMessage(status.message);
+      }
     });
+
+    if (!locationResp.success) {
+      setStepIndicators(prev => ({ ...prev, locationDetected: 'failed' }));
+      setLocationProgressMessage(null);
+      setPresenceResult({
+        success: false,
+        title: locationResp.error === 'PERMISSION_DENIED'
+          ? 'LOCATION PERMISSION DENIED'
+          : (locationResp.error === 'TIMEOUT' ? 'LOCATION REQUEST TIMED OUT' : 'LOCATION DETECTION FAILED'),
+        errorCode: locationResp.error,
+        message: locationResp.message,
+        details: {
+          locationError: locationResp.error,
+          failureStep: 'Location Acquisition',
+          failureReason: locationResp.message
+        },
+        indicators: {
+          cameraReady: true,
+          selfieCaptured: true,
+          imageQuality: 'success',
+          faceDetected: true,
+          locationDetected: 'failed',
+          accuracyCheck: 'failed',
+          geofenceCheck: 'failed',
+          faceVerification: 'skipped',
+          finalAttendance: 'failed'
+        }
+      });
+      setPresenceStep('RESULT');
+      return;
+    }
+
+    setStepIndicators(prev => ({ ...prev, locationDetected: 'success' }));
+    setLocationProgressMessage(null);
+
+    // 5. Submit to Backend Verification Service for Final Atomic Validation
+    const authenticatedStudentId = user?.id || 'STU-2024-001';
+    const backendResult = await verifyAndRecordPresence({
+      studentId: authenticatedStudentId,
+      liveImage: photoDataUrl,
+      locationData: {
+        latitude: locationResp.coords.latitude,
+        longitude: locationResp.coords.longitude,
+        accuracy: locationResp.coords.accuracy,
+        timestamp: locationResp.timestamp
+      },
+      currentUser: user
+    });
+
+    const isSuccess = backendResult.success;
+    const presenceRec = backendResult.presenceRecord || {};
+
+    let resultTitle = 'ATTENDANCE VERIFICATION FAILED';
+    if (isSuccess) {
+      resultTitle = backendResult.duplicate ? 'ATTENDANCE ALREADY RECORDED' : 'PRESENCE & ATTENDANCE VERIFIED';
+    } else {
+      if (backendResult.error === 'NO_REFERENCE_FACE') {
+        resultTitle = 'REFERENCE PHOTO MISSING';
+      } else if (backendResult.error === 'INVALID_REFERENCE_FACE') {
+        resultTitle = 'INVALID REFERENCE PHOTO';
+      } else if (backendResult.error === 'NO_FACE_DETECTED') {
+        resultTitle = 'NO FACE DETECTED';
+      } else if (backendResult.error === 'MULTIPLE_FACES_DETECTED') {
+        resultTitle = 'MULTIPLE FACES DETECTED';
+      } else if (backendResult.error === 'FACE_MISMATCH') {
+        resultTitle = 'FACE VERIFICATION MISMATCH';
+      } else if (backendResult.error === 'SERVICE_NOT_CONFIGURED' || backendResult.error === 'SERVICE_ERROR') {
+        resultTitle = 'VERIFICATION SERVICE UNAVAILABLE';
+      } else if (backendResult.error === 'POOR_ACCURACY' || backendResult.error === 'ACCURACY_TOO_LOW') {
+        resultTitle = 'LOCATION ACCURACY INSUFFICIENT';
+      } else if (backendResult.error === 'OUTSIDE_GEOFENCE') {
+        resultTitle = 'OUTSIDE HOSTEL GEOFENCE';
+      }
+    }
+
+    let faceMatchText = '✕ Failed';
+    if (isSuccess || presenceRec.faceMatchStatus === 'VERIFIED') {
+      faceMatchText = '✓ Verified';
+    } else if (backendResult.error === 'NO_REFERENCE_FACE' || presenceRec.faceMatchStatus === 'NO_REFERENCE') {
+      faceMatchText = '✕ Reference Missing';
+    } else if (backendResult.error === 'INVALID_REFERENCE_FACE') {
+      faceMatchText = '✕ Invalid Reference';
+    } else if (backendResult.error === 'NO_FACE_DETECTED') {
+      faceMatchText = '✕ No Face Detected';
+    } else if (backendResult.error === 'MULTIPLE_FACES_DETECTED') {
+      faceMatchText = '✕ Multiple Faces';
+    } else if (backendResult.error === 'FACE_MISMATCH') {
+      faceMatchText = '✕ Face Mismatch';
+    } else if (backendResult.error === 'SERVICE_NOT_CONFIGURED' || presenceRec.faceMatchStatus === 'SERVICE_NOT_CONFIGURED') {
+      faceMatchText = '✕ Service Unavailable';
+    } else if (presenceRec.faceMatchStatus === 'SKIPPED') {
+      faceMatchText = '○ Not Evaluated';
+    }
+
+    setPresenceResult({
+      success: isSuccess,
+      duplicate: backendResult.duplicate,
+      title: resultTitle,
+      errorCode: backendResult.error,
+      message: backendResult.message,
+      details: {
+        studentName: user?.name || 'Vinay Korde',
+        studentId: authenticatedStudentId,
+        faceMatch: faceMatchText,
+        locationStatus: presenceRec.locationStatus === 'INSIDE' ? 'Inside Hostel' : (presenceRec.locationStatus === 'ACCURACY_POOR' ? 'Accuracy Insufficient' : 'Outside Hostel'),
+        distance: presenceRec.distanceFromHostel,
+        accuracy: presenceRec.locationAccuracy,
+        timestamp: presenceRec.timestamp || new Date().toISOString(),
+        finalStatus: isSuccess ? 'Present' : 'Rejected',
+        failureReason: presenceRec.failureReason || backendResult.message
+      },
+      indicators: {
+        cameraReady: true,
+        selfieCaptured: true,
+        imageQuality: 'success',
+        locationDetected: 'success',
+        accuracyCheck: presenceRec.locationStatus === 'ACCURACY_POOR' ? 'failed' : 'success',
+        geofenceCheck: presenceRec.locationStatus === 'INSIDE' ? 'success' : 'failed',
+        faceVerification: (isSuccess || presenceRec.faceMatchStatus === 'VERIFIED') ? 'success' : (presenceRec.faceMatchStatus === 'SKIPPED' ? 'skipped' : 'failed'),
+        finalAttendance: isSuccess ? 'success' : 'failed'
+      }
+    });
+
+    setPresenceStep('RESULT');
   };
 
   const studentName = user?.name || 'Vinay Korde';
@@ -600,13 +760,23 @@ export default function StudentDashboard() {
           
           {presenceStep === 'CAPTURE' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--slate-800)' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--slate-800)' }}>
                 Step 1: Take Live Selfie
               </h3>
+              <p style={{ fontSize: '0.825rem', color: 'var(--slate-500)', textAlign: 'center', marginBottom: '1rem', lineHeight: 1.4 }}>
+                Position your face directly in the frame with good lighting and look straight at the camera.
+              </p>
               <div style={{ width: '100%', maxWidth: '320px', borderRadius: 'var(--radius-md)', overflow: 'hidden', backgroundColor: 'var(--slate-900)', position: 'relative' }}>
-                <video ref={videoRef} autoPlay playsInline style={{ width: '100%', display: 'block' }}></video>
-                <div style={{ position: 'absolute', bottom: '10px', left: '10px', display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}>
-                  <Camera size={14} /> Camera: ✓ Ready
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  onLoadedMetadata={() => setIsCameraReady(true)}
+                  onCanPlay={() => setIsCameraReady(true)}
+                  style={{ width: '100%', display: 'block' }}
+                ></video>
+                <div style={{ position: 'absolute', bottom: '10px', left: '10px', display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}>
+                  <Camera size={14} /> Camera: {isCameraReady ? '✓ Live Ready' : 'Initializing...'}
                 </div>
               </div>
               <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
@@ -615,25 +785,48 @@ export default function StudentDashboard() {
                 <Button variant="secondary" onClick={() => { stopPresenceCamera(); setIsPresenceModalOpen(false); }} style={{ flex: 1 }}>
                   Cancel
                 </Button>
-                <Button variant="primary" icon={Camera} onClick={verifyPresence} style={{ flex: 1 }}>
-                  Capture & Continue
+                <Button variant="primary" icon={Camera} onClick={verifyPresence} disabled={!isCameraReady} style={{ flex: 1 }}>
+                  {isCameraReady ? 'Capture & Continue' : 'Camera Initializing...'}
                 </Button>
               </div>
             </div>
           )}
 
           {presenceStep === 'PROCESSING' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
-              <RefreshCw className="spin" size={48} color="var(--primary-600)" style={{ marginBottom: '1.5rem' }} />
-              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--slate-800)', marginBottom: '1rem', textAlign: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', marginBottom: '0.5rem' }}>
-                  <MapPin size={18} color="var(--primary-500)"/> Detecting current location...
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '260px' }}>
+              <RefreshCw className="spin" size={42} color="var(--primary-600)" style={{ marginBottom: '1.25rem' }} />
+              <div style={{ width: '100%', maxWidth: '380px', backgroundColor: 'var(--slate-50)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--slate-800)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Verification Checklist
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', marginBottom: '0.5rem' }}>
-                  <Sparkles size={18} color="var(--primary-500)"/> Verifying identity...
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>1. Camera Hardware:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--success-600)' }}>✓ Ready</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
-                  <Navigation size={18} color="var(--primary-500)"/> Checking hostel geofence...
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>2. Live Selfie:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--success-600)' }}>✓ Captured</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>3. Image Quality & Lighting:</span>
+                  <span style={{ fontWeight: 600, color: stepIndicators.imageQuality === 'success' ? 'var(--success-600)' : 'var(--slate-400)' }}>
+                    {stepIndicators.imageQuality === 'success' ? '✓ Passed' : 'Analyzing...'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>4. Device Location (GPS):</span>
+                  <span style={{ fontWeight: 600, color: stepIndicators.locationDetected === 'success' ? 'var(--success-600)' : 'var(--primary-600)' }}>
+                    {locationProgressMessage || (stepIndicators.locationDetected === 'success' ? '✓ Acquired' : 'Detecting...')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>5. Face Biometrics:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--slate-400)' }}>Verifying...</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.825rem' }}>
+                  <span style={{ color: 'var(--slate-600)' }}>6. Hostel Geofence:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--slate-400)' }}>Calculating...</span>
                 </div>
               </div>
             </div>
@@ -643,66 +836,177 @@ export default function StudentDashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               
               <div style={{ 
-                width: 64, height: 64, borderRadius: '50%', 
+                width: 60, height: 60, borderRadius: '50%', 
                 backgroundColor: presenceResult.success ? 'var(--success-100)' : 'var(--danger-100)',
                 color: presenceResult.success ? 'var(--success-600)' : 'var(--danger-600)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: '1rem'
+                marginBottom: '0.75rem'
               }}>
-                {presenceResult.success ? <CheckCircle2 size={36} /> : <XCircle size={36} />}
+                {presenceResult.success ? <CheckCircle2 size={32} /> : <XCircle size={32} />}
               </div>
               
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: presenceResult.success ? 'var(--success-700)' : 'var(--danger-700)', textAlign: 'center', marginBottom: '0.5rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: presenceResult.success ? 'var(--success-700)' : 'var(--danger-700)', textAlign: 'center', marginBottom: '0.35rem' }}>
                 {presenceResult.success ? '✓ ' : '✕ '} {presenceResult.title}
               </h3>
               
-              <p style={{ color: 'var(--slate-600)', textAlign: 'center', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+              <p style={{ color: 'var(--slate-600)', textAlign: 'center', marginBottom: '1.25rem', fontSize: '0.9rem', lineHeight: 1.4 }}>
                 {presenceResult.message}
               </p>
 
-              {presenceResult.details && (
-                <div style={{ width: '100%', backgroundColor: 'var(--slate-50)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: '1.5rem' }}>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                    <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Student:</span>
-                    <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{user?.name || 'Vinay Korde'}</span>
+              {/* Status Indicators Breakdown Checklist */}
+              <div style={{ width: '100%', backgroundColor: 'var(--slate-50)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--slate-700)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Verification Diagnostics
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', fontSize: '0.825rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Camera:</span>
+                    <span style={{ fontWeight: 700, color: 'var(--success-600)' }}>✓ Ready</span>
                   </div>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                    <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Face Match:</span>
-                    <span style={{ fontWeight: 700, color: presenceResult.details.faceMatch === 'Verified' ? 'var(--success-600)' : 'var(--danger-600)' }}>
-                      {presenceResult.details.faceMatch === 'Verified' ? '✓ Verified' : '✕ Failed'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Selfie:</span>
+                    <span style={{ fontWeight: 700, color: 'var(--success-600)' }}>✓ Captured</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Face Match:</span>
+                    <span style={{
+                      fontWeight: 700,
+                      color: (presenceResult.indicators?.faceVerification === 'success' || presenceResult.details?.faceMatch?.startsWith('✓'))
+                        ? 'var(--success-600)'
+                        : (presenceResult.details?.faceMatch?.startsWith('○') ? 'var(--slate-500)' : 'var(--danger-600)')
+                    }}>
+                      {presenceResult.details?.faceMatch || (presenceResult.indicators?.faceVerification === 'success' ? '✓ Verified' : '✕ Failed')}
                     </span>
                   </div>
-                  
-                  {presenceResult.details.distance !== undefined && (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Location:</span>
-                        <span style={{ fontWeight: 700, color: presenceResult.success ? 'var(--success-600)' : 'var(--danger-600)' }}>
-                          {presenceResult.success ? '✓ Inside Hostel' : '✕ Outside Hostel'}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Distance:</span>
-                        <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>
-                          {presenceResult.details.distance > 1000 ? `${(presenceResult.details.distance/1000).toFixed(1)} km` : `${presenceResult.details.distance} meters`}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Accuracy:</span>
-                        <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>±{presenceResult.details.accuracy} m</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Status:</span>
-                        <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{presenceResult.details.status}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--slate-500)', fontWeight: 600 }}>Time:</span>
-                        <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                      </div>
-                    </>
-                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Location:</span>
+                    <span style={{
+                      fontWeight: 700,
+                      color: presenceResult.indicators?.geofenceCheck === 'success' ? 'var(--success-600)' : 'var(--danger-600)'
+                    }}>
+                      {presenceResult.indicators?.geofenceCheck === 'success' ? '✓ Inside' : '✕ Outside / Failed'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>GPS Accuracy:</span>
+                    <span style={{
+                      fontWeight: 700,
+                      color: presenceResult.indicators?.accuracyCheck === 'failed' ? 'var(--danger-600)' : 'var(--slate-800)'
+                    }}>
+                      {presenceResult.details?.accuracy !== undefined && presenceResult.details?.accuracy !== null ? `±${presenceResult.details.accuracy} m` : 'N/A'}
+                      {presenceResult.indicators?.accuracyCheck === 'failed' && ' (Max allowed: 50 m)'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Distance:</span>
+                    <span style={{
+                      fontWeight: 700,
+                      color: presenceResult.indicators?.geofenceCheck === 'failed' ? 'var(--danger-600)' : 'var(--slate-800)'
+                    }}>
+                      {presenceResult.details?.distance !== undefined && presenceResult.details?.distance !== null
+                        ? (presenceResult.details.distance > 1000
+                            ? `${(presenceResult.details.distance / 1000).toFixed(2)} km`
+                            : `${presenceResult.details.distance} m`)
+                        : 'N/A'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gridColumn: 'span 2', paddingTop: '0.3rem' }}>
+                    <span style={{ color: 'var(--slate-500)' }}>Final Attendance Result:</span>
+                    <span style={{
+                      fontWeight: 800,
+                      color: presenceResult.success ? 'var(--success-700)' : 'var(--danger-700)'
+                    }}>
+                      {presenceResult.success ? '✓ MARKED PRESENT' : '✕ NOT MARKED'}
+                    </span>
+                  </div>
+                </div>
+
+                {presenceResult.details?.failureReason && !presenceResult.success && (
+                  <div style={{ marginTop: '0.75rem', padding: '0.6rem 0.8rem', backgroundColor: 'var(--danger-50)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger-100)', color: 'var(--danger-800)', fontSize: '0.8rem' }}>
+                    <strong>Details:</strong> {presenceResult.details.failureReason}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Callout if Location Accuracy is Insufficient */}
+              {(presenceResult.errorCode === 'POOR_ACCURACY' || presenceResult.indicators?.accuracyCheck === 'failed') && !presenceResult.success && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#1e40af' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>📍 Location Signal Guidance</div>
+                  <div style={{ lineHeight: 1.4 }}>
+                    Your device reported GPS accuracy is <strong>±{presenceResult.details?.accuracy || 63} m</strong>, which exceeds the required <strong>50 m</strong> limit (your distance was {presenceResult.details?.distance || 38} m from hostel).
+                    Please move near a window or step outdoors for direct sky visibility, then click <strong>Try Again</strong> to get a refined GPS reading.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Callout if Face Mismatches */}
+              {presenceResult.errorCode === 'FACE_MISMATCH' && !presenceResult.success && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#991b1b' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>⚠️ Face Biometrics Advice</div>
+                  <div style={{ lineHeight: 1.4 }}>
+                    Your captured face does not match the registered student reference photo.
+                    Please look directly at the camera in a well-lit area without headwear, glasses, or shadows. If your registered reference face photo is outdated or incorrect, please have the Warden update it.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Callout if No Face Detected */}
+              {presenceResult.errorCode === 'NO_FACE_DETECTED' && !presenceResult.success && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#92400e' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>💡 Face Positioning Guidance</div>
+                  <div style={{ lineHeight: 1.4 }}>
+                    No face was detected in the selfie. Please ensure you are facing the camera directly, center your face in the oval frame, and ensure the room is well lit.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Callout if Multiple Faces Detected */}
+              {presenceResult.errorCode === 'MULTIPLE_FACES_DETECTED' && !presenceResult.success && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#991b1b' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>👥 Multiple Faces Detected</div>
+                  <div style={{ lineHeight: 1.4 }}>
+                    Multiple faces were detected in the selfie. Only you should be in front of the camera when marking presence.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Callout if Outside Geofence */}
+              {presenceResult.errorCode === 'OUTSIDE_GEOFENCE' && !presenceResult.success && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#991b1b' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>📍 Geofence Boundary Check</div>
+                  <div style={{ lineHeight: 1.4 }}>
+                    You are currently <strong>{presenceResult.details?.distance ? (presenceResult.details.distance > 1000 ? `${(presenceResult.details.distance / 1000).toFixed(2)} km` : `${presenceResult.details.distance} m`) : ''}</strong> away from the hostel. Presence verification is only permitted within the {hostelSettings?.radius || 100} m boundary.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Callout if Reference Face is Missing */}
+              {presenceResult.errorCode === 'NO_REFERENCE_FACE' && (
+                <div style={{ width: '100%', marginBottom: '1.25rem', padding: '0.85rem 1rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', fontSize: '0.825rem', color: '#92400e' }}>
+                  <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>📌 Action Required: Warden Face Enrollment</div>
+                  <div style={{ lineHeight: 1.4, marginBottom: '0.65rem' }}>
+                    Your trusted reference photo has not been enrolled by the Warden yet. A registered reference face is required for biometric presence verification.
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      stopPresenceCamera();
+                      setIsPresenceModalOpen(false);
+                      await switchRole('warden');
+                      navigate('/warden/students');
+                    }}
+                    style={{ fontSize: '0.78rem', fontWeight: 700, borderColor: '#d97706', color: '#92400e' }}
+                  >
+                    Switch to Warden to Enroll Face Photo →
+                  </Button>
                 </div>
               )}
 
@@ -714,9 +1018,13 @@ export default function StudentDashboard() {
                 ) : (
                   <>
                     <Button variant="secondary" onClick={() => setIsPresenceModalOpen(false)} style={{ flex: 1 }}>
-                      Cancel
+                      Close
                     </Button>
-                    <Button variant="primary" onClick={startPresenceCamera} style={{ flex: 1 }}>
+                    <Button
+                      variant="primary"
+                      onClick={startPresenceCamera}
+                      style={{ flex: 1 }}
+                    >
                       Try Again
                     </Button>
                   </>

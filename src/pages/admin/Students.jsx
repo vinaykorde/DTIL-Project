@@ -16,15 +16,19 @@ import {
   CalendarCheck,
   Camera,
   RefreshCw,
-  Video
+  Video,
+  Upload,
+  Key
 } from 'lucide-react';
 import Table from '../../components/common/Table';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import StatusBadge from '../../components/common/StatusBadge';
+import BatchStudentModal from '../../components/admin/BatchStudentModal';
+import { createStudentAccounts, generateStrongPassword } from '../../services/studentCreationService';
 
 export default function Students() {
-  const { students, addStudent, updateStudent, deleteStudent } = useData();
+  const { students, addStudent, addStudentAccounts, updateStudent, deleteStudent } = useData();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [hostelFilter, setHostelFilter] = useState('All');
@@ -35,11 +39,14 @@ export default function Students() {
   const [viewStudent, setViewStudent] = useState(null);
   const [editStudent, setEditStudent] = useState(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isBatchOpen, setIsBatchOpen] = useState(false);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
     name: '',
+    studentId: '',
     email: '',
+    password: '',
     phone: '',
     department: 'Computer Science & Engg',
     year: '3rd Year',
@@ -109,7 +116,9 @@ export default function Students() {
   const resetForm = () => {
     setFormData({
       name: '',
+      studentId: '',
       email: '',
+      password: '',
       phone: '',
       department: 'Computer Science & Engg',
       year: '3rd Year',
@@ -137,7 +146,9 @@ export default function Students() {
     setEditStudent(stu);
     setFormData({
       name: stu.name,
+      studentId: stu.id,
       email: stu.email,
+      password: '',
       phone: stu.phone,
       department: stu.department,
       year: stu.year,
@@ -155,16 +166,55 @@ export default function Students() {
     });
   };
 
-  const handleSaveStudent = (e) => {
+  const handleSaveStudent = async (e) => {
     e.preventDefault();
     if (editStudent) {
       updateStudent(editStudent.id, formData);
       setEditStudent(null);
+      resetForm();
     } else {
-      addStudent(formData);
+      // If a login password is provided, provision in Supabase Auth server-side
+      if (formData.password && formData.password.trim().length >= 6) {
+        try {
+          const sid = formData.studentId?.trim() || `STU-2024-${Math.floor(100 + Math.random() * 900)}`;
+          const res = await createStudentAccounts([
+            {
+              name: formData.name,
+              studentId: sid,
+              email: formData.email,
+              password: formData.password,
+              department: formData.department,
+              year: formData.year,
+              hostel: formData.hostel,
+              room: formData.room,
+              bed: formData.bed,
+              phone: formData.phone
+            }
+          ]);
+
+          if (res?.results?.[0]?.success) {
+            addStudentAccounts(res.results);
+            setIsAddOpen(false);
+            resetForm();
+            return;
+          } else if (res?.results?.[0]?.error) {
+            alert(`Account creation failed: ${res.results[0].error}`);
+            return;
+          }
+        } catch (err) {
+          alert(`Account creation error: ${err.message}`);
+          return;
+        }
+      }
+
+      // Default registration fallback
+      addStudent({
+        id: formData.studentId || `STU-2024-${Math.floor(100 + Math.random() * 900)}`,
+        ...formData
+      });
       setIsAddOpen(false);
+      resetForm();
     }
-    resetForm();
   };
 
   const handleDelete = (id) => {
@@ -200,7 +250,23 @@ export default function Students() {
       key: 'name',
       render: (row) => (
         <div>
-          <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{row.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{row.name}</span>
+            {row.authUserId && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '0.65rem', color: '#1d4ed8', backgroundColor: '#eff6ff', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, border: '1px solid #bfdbfe' }}>
+                <Key size={10} /> Auth
+              </span>
+            )}
+            {row.referenceFacePhoto ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.68rem', color: '#047857', backgroundColor: '#ecfdf5', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                ✓ Face Enrolled
+              </span>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.68rem', color: '#b91c1c', backgroundColor: '#fef2f2', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                ✕ Face Missing
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--slate-400)' }}>{row.email}</div>
         </div>
       )
@@ -277,9 +343,14 @@ export default function Students() {
             Manage student registrations, hostel block assignments, and resident profiles
           </p>
         </div>
-        <Button variant="primary" icon={UserPlus} onClick={handleOpenAdd}>
-          Register Student
-        </Button>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <Button variant="secondary" icon={Users} onClick={() => setIsBatchOpen(true)}>
+            Add Multiple Students (Supabase Auth)
+          </Button>
+          <Button variant="primary" icon={UserPlus} onClick={handleOpenAdd}>
+            Register Student
+          </Button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -388,8 +459,13 @@ export default function Students() {
               <div>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--slate-900)' }}>{viewStudent.name}</h3>
                 <div style={{ fontSize: '0.85rem', color: 'var(--slate-500)' }}>{viewStudent.id} • {viewStudent.department}</div>
-                <div style={{ marginTop: '0.25rem' }}>
+                <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <StatusBadge status={viewStudent.status || 'Active'} size="sm" />
+                  {viewStudent.authUserId && (
+                    <span style={{ fontSize: '0.68rem', color: '#1d4ed8', backgroundColor: '#eff6ff', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, border: '1px solid #bfdbfe', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                      <Key size={10} /> Supabase Auth Linked
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -444,12 +520,33 @@ export default function Students() {
             <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--slate-900)', marginBottom: '1rem' }}>Identity Verification</h4>
             
             {!formData.referenceFacePhoto && !isCameraActive && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem', backgroundColor: 'var(--slate-50)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
-                <Camera size={32} color="var(--slate-400)" style={{ marginBottom: '1rem' }} />
-                <div style={{ fontSize: '0.9rem', color: 'var(--slate-600)', marginBottom: '1rem' }}>No reference face registered</div>
-                <Button type="button" variant="secondary" icon={Video} onClick={startCamera}>
-                  Open Camera
-                </Button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1.5rem', backgroundColor: 'var(--slate-50)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
+                <Camera size={32} color="var(--slate-400)" style={{ marginBottom: '0.75rem' }} />
+                <div style={{ fontSize: '0.9rem', color: 'var(--slate-600)', marginBottom: '0.75rem' }}>No reference face registered</div>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <Button type="button" variant="secondary" icon={Video} onClick={startCamera}>
+                    Open Camera
+                  </Button>
+                  <label className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: 0, padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 600, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', background: '#fff' }}>
+                    <Upload size={16} />
+                    Upload Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            setFormData(prev => ({ ...prev, referenceFacePhoto: event.target.result }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
             )}
 
@@ -479,21 +576,34 @@ export default function Students() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Full Name *</label>
-            <input
-              type="text"
-              className="form-input"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-              placeholder="e.g. Rahul Sharma"
-            />
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Full Name *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+                placeholder="e.g. Rahul Sharma"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Student ID (Roll / Reg No.) *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.studentId || ''}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                required
+                placeholder="e.g. STU-2024-002"
+              />
+            </div>
           </div>
 
           <div className="grid-2">
             <div className="form-group">
-              <label className="form-label">Email Address *</label>
+              <label className="form-label">Email Address (Login Username) *</label>
               <input
                 type="email"
                 className="form-input"
@@ -503,18 +613,54 @@ export default function Students() {
                 placeholder="rahul@college.edu"
               />
             </div>
+            {!editStudent ? (
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label">Login Password (Supabase Auth)</label>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, password: generateStrongPassword() }))}
+                    style={{ fontSize: '0.72rem', color: 'var(--primary-600)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Auto-Generate
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.password || ''}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Create password (min 6 chars)"
+                  minLength={6}
+                />
+              </div>
+            ) : (
+              <div className="form-group">
+                <label className="form-label">Phone Number *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  required
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+            )}
+          </div>
+
+          {!editStudent && (
             <div className="form-group">
-              <label className="form-label">Phone Number *</label>
+              <label className="form-label">Contact Phone Number</label>
               <input
                 type="text"
                 className="form-input"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                required
                 placeholder="+91 98765 43210"
               />
             </div>
-          </div>
+          )}
 
           <div className="grid-2">
             <div className="form-group">
@@ -645,6 +791,15 @@ export default function Students() {
           </div>
         </form>
       </Modal>
+
+      {/* ================= MODAL: BATCH STUDENT CREATION ================= */}
+      <BatchStudentModal
+        isOpen={isBatchOpen}
+        onClose={() => setIsBatchOpen(false)}
+        onStudentsCreated={(createdList) => {
+          addStudentAccounts(createdList);
+        }}
+      />
     </div>
   );
 }
