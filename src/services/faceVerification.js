@@ -42,10 +42,12 @@ export async function getFaceApi() {
 
 /**
  * Load face-api neural network models from the public /models directory.
- * @param {string} [modelsPath='/models']
+ * Automatically respects Vite BASE_URL for GitHub Pages deployment.
+ * @param {string} [modelsPath]
  * @returns {Promise<boolean>}
  */
-export async function loadFaceApiModels(modelsPath = '/models') {
+export async function loadFaceApiModels(modelsPath) {
+  const resolvedPath = modelsPath || `${(import.meta.env?.BASE_URL || '/').replace(/\/$/, '')}/models`;
   if (typeof window === 'undefined') return false;
   if (modelsLoaded) return true;
   if (modelLoadingPromise) return modelLoadingPromise;
@@ -57,16 +59,16 @@ export async function loadFaceApiModels(modelsPath = '/models') {
 
       // Load primary SSD MobileNet v1, TinyFaceDetector fallback, 68-point landmarks, and Face Recognition net
       const loads = [
-        api.nets.ssdMobilenetv1.loadFromUri(modelsPath).catch(err => {
+        api.nets.ssdMobilenetv1.loadFromUri(resolvedPath).catch(err => {
           console.warn('SSD MobileNet load error:', err);
           return null;
         }),
-        api.nets.tinyFaceDetector.loadFromUri(modelsPath).catch(err => {
+        api.nets.tinyFaceDetector.loadFromUri(resolvedPath).catch(err => {
           console.warn('TinyFaceDetector load error:', err);
           return null;
         }),
-        api.nets.faceLandmark68Net.loadFromUri(modelsPath),
-        api.nets.faceRecognitionNet.loadFromUri(modelsPath)
+        api.nets.faceLandmark68Net.loadFromUri(resolvedPath),
+        api.nets.faceRecognitionNet.loadFromUri(resolvedPath)
       ];
       await Promise.all(loads);
 
