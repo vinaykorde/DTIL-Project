@@ -279,6 +279,7 @@ export default function RegisterPage() {
 
   return (
     <div
+      className="auth-wrapper"
       style={{
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
@@ -291,7 +292,7 @@ export default function RegisterPage() {
       <div style={{ maxWidth: '580px', width: '100%' }}>
         {/* Card Surface */}
         <div
-          className="card"
+          className="card auth-card"
           style={{
             padding: '2.5rem',
             borderRadius: 'var(--radius-xl)',
@@ -543,7 +544,7 @@ export default function RegisterPage() {
               </div>
 
               {/* Contact Phone & Emergency Contact in 2 columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="register-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontWeight: 600 }}>Student Mobile Phone</label>
                   <div style={{ position: 'relative' }}>
@@ -598,7 +599,7 @@ export default function RegisterPage() {
               </div>
 
               {/* Academic Department & Year in 2 columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="register-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontWeight: 600 }}>Department</label>
                   <select
@@ -661,7 +662,7 @@ export default function RegisterPage() {
               </div>
 
               {/* Password & Confirm Password in 2 columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="register-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontWeight: 600 }}>Password (min 6)</label>
                   <div style={{ position: 'relative' }}>

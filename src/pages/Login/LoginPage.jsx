@@ -151,6 +151,7 @@ export default function LoginPage({ fixedRole }) {
 
   return (
     <div
+      className="auth-wrapper"
       style={{
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
@@ -169,7 +170,7 @@ export default function LoginPage({ fixedRole }) {
       >
         {/* Card Surface */}
         <div
-          className="card"
+          className="card auth-card"
           style={{
             padding: '2.5rem',
             borderRadius: 'var(--radius-xl)',

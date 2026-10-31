@@ -47,7 +47,7 @@ export default function WardenDashboard() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
       {/* Top Welcome Banner */}
       <div
-        className="card"
+        className="card banner-responsive"
         style={{
           background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)',
           color: '#ffffff',
@@ -70,7 +70,7 @@ export default function WardenDashboard() {
             {wardenHostel} • {totalHostelStudents} Enrolled Students • Roll-call ready
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="banner-actions" style={{ display: 'flex', gap: '0.75rem' }}>
           <Button
             variant="secondary"
             size="md"

@@ -50,7 +50,7 @@ export default function Navbar() {
             <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--slate-900)', letterSpacing: '-0.02em' }}>
               HostelSync
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--slate-500)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div className="logo-subtitle" style={{ fontSize: '0.7rem', color: 'var(--slate-500)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Hostel Management System
             </div>
           </div>

@@ -412,7 +412,7 @@ export default function StudentDashboard() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
       {/* Welcome Banner */}
       <div
-        className="card"
+        className="card banner-responsive"
         style={{
           background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
           color: '#ffffff',
@@ -435,7 +435,7 @@ export default function StudentDashboard() {
             {hostelName} • {roomNumber === 'Unallocated' ? 'Room Pending Allocation' : `Room ${roomNumber}`} • {user?.department || 'Information Technology'} ({user?.year || '1st Year'})
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div className="banner-actions" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <Button
             variant="secondary"
             size="md"

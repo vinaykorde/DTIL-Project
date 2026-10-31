@@ -45,7 +45,7 @@ export default function AdminDashboard() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
       {/* Top Welcome Banner */}
       <div
-        className="card"
+        className="card banner-responsive"
         style={{
           background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
           color: '#ffffff',
@@ -68,7 +68,7 @@ export default function AdminDashboard() {
             4 Hostels Active • {totalStudents} Residents Enrolled • {occupancyRate}% Overall Occupancy
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="banner-actions" style={{ display: 'flex', gap: '0.75rem' }}>
           <Button
             variant="secondary"
             size="md"

@@ -512,18 +512,27 @@ export async function loginUser(email, password, role) {
 
   // If Supabase Auth failed or is unconfirmed, check local and seed accounts
   if (authError || !authData?.user) {
+    const cleanEmailLower = cleanEmail.toLowerCase();
+    const cleanPassword = password.trim();
+
     // 1. Check Vinay Korde student account
     if (
       role === 'student' &&
-      (cleanEmail === 'student@hostel.com' || cleanEmail === 'vinaykorde@gmail.com') &&
-      (password === 'demo123' || password === 'Student@07092007' || password === 'Vinay@123')
+      (
+        cleanEmailLower === 'student@hostel.com' ||
+        cleanEmailLower === 'vinaykorde@gmail.com' ||
+        cleanEmailLower === 'stu-2024-001' ||
+        cleanEmailLower === 'vinay' ||
+        cleanEmailLower === 'vinay korde'
+      ) &&
+      (cleanPassword === 'demo123' || cleanPassword === 'Student@07092007' || cleanPassword === 'Vinay@123')
     ) {
       const vinayProfile = {
         id: 'STU-2024-001',
         authUserId: 'STU-2024-001',
         studentId: 'STU-2024-001',
         name: 'Vinay Korde',
-        email: cleanEmail,
+        email: cleanEmailLower.includes('@') ? cleanEmailLower : 'student@hostel.com',
         phone: '+91 91234 56780',
         role: 'student',
         department: 'Information Technology',
@@ -543,14 +552,18 @@ export async function loginUser(email, password, role) {
         lightPreference: 'Dim',
         roommateStatus: 'Assigned'
       };
-      saveRegisteredAccount({ email: cleanEmail, password, user: vinayProfile });
+      saveRegisteredAccount({ email: vinayProfile.email, password: cleanPassword, user: vinayProfile });
       return { user: vinayProfile, token: 'token-STU-2024-001' };
     }
 
     // 2. Check registered accounts from Student Registration page
     const localAccounts = getRegisteredAccounts();
     const matched = localAccounts.find(
-      a => a.email?.toLowerCase() === cleanEmail && a.password === password
+      a => (
+        a.email?.toLowerCase() === cleanEmailLower ||
+        a.user?.studentId?.toLowerCase() === cleanEmailLower ||
+        a.user?.id?.toLowerCase() === cleanEmailLower
+      ) && a.password === cleanPassword
     );
 
     if (matched?.user) {

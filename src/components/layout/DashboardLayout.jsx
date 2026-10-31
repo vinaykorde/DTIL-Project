@@ -30,6 +30,7 @@ export default function DashboardLayout() {
       <div className="dashboard-main">
         {/* Topbar */}
         <header
+          className="dashboard-topbar"
           style={{
             height: 'var(--topbar-height)',
             backgroundColor: '#ffffff',
@@ -49,7 +50,7 @@ export default function DashboardLayout() {
             <button
               onClick={() => setSidebarOpen(true)}
               className="btn-icon"
-              style={{ display: 'none', color: 'var(--slate-700)' }}
+              style={{ color: 'var(--slate-700)' }}
               id="mobile-hamburger-btn"
               aria-label="Open navigation sidebar"
             >

@@ -148,7 +148,7 @@ export default function LandingPage() {
             </p>
 
             {/* CTA Buttons */}
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="hero-cta-buttons" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
               <Button
                 variant="primary"
                 size="lg"
@@ -167,6 +167,7 @@ export default function LandingPage() {
 
             {/* Quick trust metrics */}
             <div
+              className="hero-metrics"
               style={{
                 display: 'flex',
                 gap: '2rem',
@@ -379,7 +380,7 @@ export default function LandingPage() {
       {/* ================= ABOUT SECTION ================= */}
       <section id="about" style={{ padding: '5rem 1.5rem', backgroundColor: 'var(--slate-50)', borderTop: '1px solid var(--border-subtle)' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '3rem', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '3rem', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary-600)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
                 Academic DTIL Project
