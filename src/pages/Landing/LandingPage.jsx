@@ -394,7 +394,7 @@ export default function LandingPage() {
                 <strong>HostelSync</strong> delivers a centralized, secure, and responsive web application where all campus stakeholders interact transparently in real-time.
               </p>
               <Button variant="primary" onClick={() => navigate('/login')}>
-                Try Demo Portals
+                Access Student Portal
               </Button>
             </div>
 

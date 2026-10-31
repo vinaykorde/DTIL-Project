@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   ShieldCheck,
@@ -19,8 +19,19 @@ import {
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 
-export default function LoginPage() {
-  const [selectedRole, setSelectedRole] = useState(null); // 'admin' | 'student' | 'warden'
+export default function LoginPage({ fixedRole }) {
+  const location = useLocation();
+  const { user, role, login, resetPassword, loading, authInitialized } = useAuth();
+  const navigate = useNavigate();
+
+  // Route-based role inference: prop > route path > default 'student'
+  const routeRole = fixedRole || (
+    location.pathname.includes('admin-access') ? 'admin' :
+    location.pathname.includes('warden-access') ? 'warden' :
+    'student'
+  );
+
+  const [selectedRole, setSelectedRole] = useState(routeRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,8 +43,20 @@ export default function LoginPage() {
   const [forgotError, setForgotError] = useState('');
   const [error, setError] = useState('');
 
-  const { login, resetPassword, loading } = useAuth();
-  const navigate = useNavigate();
+  // If already authenticated, redirect user to their permitted dashboard
+  useEffect(() => {
+    if (user && role && authInitialized) {
+      navigate(`/${role}/dashboard`, { replace: true });
+    }
+  }, [user, role, authInitialized, navigate]);
+
+  // Keep selectedRole synced if route changes
+  useEffect(() => {
+    setSelectedRole(routeRole);
+    setEmail('');
+    setPassword('');
+    setError('');
+  }, [routeRole]);
 
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
@@ -320,9 +343,8 @@ export default function LoginPage() {
                     {selectedRole}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole(null)}
+                <Link
+                  to="/"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -330,11 +352,12 @@ export default function LoginPage() {
                     fontSize: '0.8rem',
                     fontWeight: 600,
                     color: 'var(--primary-600)',
+                    textDecoration: 'none',
                     cursor: 'pointer'
                   }}
                 >
-                  <ArrowLeft size={14} /> Change Role
-                </button>
+                  <ArrowLeft size={14} /> Back to Home
+                </Link>
               </div>
 
               {error && (

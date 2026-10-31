@@ -45,7 +45,13 @@ export default function ProtectedRoute({ allowedRoles, children }) {
 
   // 2. Unauthenticated check
   if (!user || !role) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    const redirectPath = allowedRoles?.includes('admin')
+      ? '/admin-access'
+      : allowedRoles?.includes('warden')
+      ? '/warden-access'
+      : '/login';
+
+    return <Navigate to={redirectPath} state={{ from: location }} replace />;
   }
 
   // 3. Role authorization check
@@ -56,3 +62,4 @@ export default function ProtectedRoute({ allowedRoles, children }) {
 
   return children;
 }
+

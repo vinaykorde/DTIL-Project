@@ -53,10 +53,14 @@ export default function AppRoutes() {
         <Route path="/" element={<LandingPage />} />
       </Route>
 
-      {/* Standalone Login & Registration */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* Public Student Login & Registration */}
+      <Route path="/login" element={<LoginPage fixedRole="student" />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/signup" element={<RegisterPage />} />
+
+      {/* Separate Private Access Routes */}
+      <Route path="/admin-access" element={<LoginPage fixedRole="admin" />} />
+      <Route path="/warden-access" element={<LoginPage fixedRole="warden" />} />
 
       {/* Admin Portal (Strictly Admin only) */}
       <Route
