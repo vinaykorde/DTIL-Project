@@ -20,13 +20,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
-  ''
+  'https://twijezwruonhqqpxbhiz.supabase.co'
 ).trim();
 
 const supabaseKey = (
   (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
   (typeof process !== 'undefined' && (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
-  ''
+  'sb_publishable_oZKO7Rd8pznL4AYzyo2PQw_IzsEtVNK'
 ).trim();
 
 /**

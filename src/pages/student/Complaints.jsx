@@ -20,12 +20,15 @@ export default function StudentComplaints() {
     priority: 'Medium'
   });
 
-  const studentName = user?.name || 'Vinay Korde';
-  const roomNumber = user?.room || '204';
-  const hostelName = user?.hostel || 'Vikramshilla Boys Hostel';
+  const studentName = user?.name || user?.email?.split('@')[0] || 'Student Resident';
+  const roomNumber = user?.room || 'Unallocated';
+  const hostelName = user?.hostel || 'Awaiting Allocation';
 
   const myComplaints = complaints.filter(
-    c => c.studentName === studentName || c.room === roomNumber
+    c => (user?.id && c.studentId === user.id) ||
+         (user?.studentId && c.studentId === user.studentId) ||
+         c.studentName === studentName ||
+         (roomNumber !== 'Unallocated' && c.room === roomNumber)
   );
 
   const filtered = filterCategory === 'All'
@@ -36,7 +39,7 @@ export default function StudentComplaints() {
     e.preventDefault();
     await addComplaint({
       studentName,
-      studentId: user?.id || 'STU-2024-001',
+      studentId: user?.id || user?.studentId || 'STU-2024-001',
       room: roomNumber,
       hostel: hostelName,
       category: form.category,

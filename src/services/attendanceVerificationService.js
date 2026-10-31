@@ -78,29 +78,43 @@ export async function processAttendanceVerification({
   }
 
   // Prevent student A from submitting attendance under student B's ID
-  if (currentUser && currentUser.role === 'student' && currentUser.id !== studentId) {
-    return {
-      success: false,
-      verified: false,
-      step: 'AUTHORIZATION',
-      error: 'UNAUTHORIZED_STUDENT',
-      message: 'Unauthorized: You cannot mark attendance on behalf of another student.',
-      presenceRecord: {
-        id: `PR-${Date.now()}`,
-        studentId,
-        timestamp,
-        faceMatchStatus: 'FAILED',
-        locationStatus: 'FAILED',
-        verificationStatus: 'REJECTED',
-        failureReason: 'Unauthorized cross-student attendance attempt'
-      }
-    };
+  if (currentUser && currentUser.role === 'student') {
+    const isMatch =
+      currentUser.id === studentId ||
+      currentUser.studentId === studentId ||
+      currentUser.authUserId === studentId ||
+      (currentUser.email && currentUser.email.toLowerCase() === String(studentId).toLowerCase());
+
+    if (!isMatch) {
+      return {
+        success: false,
+        verified: false,
+        step: 'AUTHORIZATION',
+        error: 'UNAUTHORIZED_STUDENT',
+        message: 'Unauthorized: You cannot mark attendance on behalf of another student.',
+        presenceRecord: {
+          id: `PR-${Date.now()}`,
+          studentId,
+          timestamp,
+          faceMatchStatus: 'FAILED',
+          locationStatus: 'FAILED',
+          verificationStatus: 'REJECTED',
+          failureReason: 'Unauthorized cross-student attendance attempt'
+        }
+      };
+    }
   }
 
   // -------------------------------------------------------------
   // Step 2: Retrieve Registered Student Record
   // -------------------------------------------------------------
-  const student = students.find((s) => s.id === studentId);
+  const student = students.find(
+    (s) =>
+      s.id === studentId ||
+      s.studentId === studentId ||
+      s.authUserId === studentId ||
+      (s.email && s.email.toLowerCase() === String(studentId).toLowerCase())
+  );
   if (!student) {
     return {
       success: false,
@@ -262,7 +276,13 @@ export async function processAttendanceVerification({
   // Step 9: Check for Duplicate Attendance Entry for Today
   // -------------------------------------------------------------
   const existingToday = attendanceRecords.find(
-    (a) => a.studentId === studentId && a.date === dateStr && a.status === 'Present'
+    (a) =>
+      (a.studentId === studentId ||
+        a.studentId === student.id ||
+        (student.studentId && a.studentId === student.studentId) ||
+        (student.authUserId && a.studentId === student.authUserId)) &&
+      a.date === dateStr &&
+      a.status === 'Present'
   );
 
   if (existingToday) {
@@ -313,7 +333,7 @@ export async function processAttendanceVerification({
 
   const attendanceRecord = {
     id: `ATT-${Date.now()}`,
-    studentId,
+    studentId: student?.id || studentId,
     studentName,
     room: student.room || 'General',
     hostel: student.hostel || hostelSettings?.name || 'Vikramshilla Boys Hostel',

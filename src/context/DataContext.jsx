@@ -20,7 +20,13 @@ import {
   createRoom as apiCreateRoom,
   registerVisitor as apiRegisterVisitor,
   markAttendance as apiMarkAttendance,
-  verifyAttendancePresence
+  getComplaints,
+  getNotices,
+  getLeaveRequests,
+  getVisitors,
+  verifyAttendancePresence,
+  getRegisteredAccounts,
+  saveRegisteredAccount
 } from '../services/api';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -43,7 +49,17 @@ export function DataProvider({ children }) {
     }
   };
 
-  const [students, setStudents] = useState(() => loadState('students', mockStudents));
+  // Load students by merging local persistent store and initial mock dataset
+  const getInitialStudents = () => {
+    const base = loadState('students', mockStudents);
+    const registered = getRegisteredAccounts().map(a => a.user).filter(Boolean);
+    const existingIds = new Set(base.map(s => s.id));
+    const existingEmails = new Set(base.map(s => s.email?.toLowerCase()));
+    const toAdd = registered.filter(r => !existingIds.has(r.id) && !existingEmails.has(r.email?.toLowerCase()));
+    return [...toAdd, ...base];
+  };
+
+  const [students, setStudents] = useState(getInitialStudents);
   const [rooms, setRooms] = useState(() => loadState('rooms', mockRooms));
   const [complaints, setComplaints] = useState(() => loadState('complaints', mockComplaints));
   const [notices, setNotices] = useState(() => loadState('notices', mockNotices));
@@ -65,19 +81,22 @@ export function DataProvider({ children }) {
   useEffect(() => { localStorage.setItem('dtil_hostel_settings', JSON.stringify(hostelSettings)); }, [hostelSettings]);
   useEffect(() => { localStorage.setItem('dtil_presence_records', JSON.stringify(presenceRecords)); }, [presenceRecords]);
 
-  // Synchronize student records from Supabase profiles when connected
-  useEffect(() => {
-    let isMounted = true;
-    async function syncSupabaseProfiles() {
-      if (!isSupabaseConfigured()) return;
+  // Comprehensive Student Directory Reload (Supabase + Local Registered Accounts + Directory)
+  const reloadStudents = async () => {
+    // 1. Registered accounts store
+    const registeredList = getRegisteredAccounts().map(a => a.user).filter(Boolean);
+
+    // 2. Fetch live profiles from Supabase if configured
+    let supabaseStudents = [];
+    if (isSupabaseConfigured()) {
       try {
         const { data: profiles, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('role', 'student');
 
-        if (!error && Array.isArray(profiles) && profiles.length > 0 && isMounted) {
-          const mapped = profiles.map(p => ({
+        if (!error && Array.isArray(profiles) && profiles.length > 0) {
+          supabaseStudents = profiles.map(p => ({
             id: p.student_id || p.id,
             authUserId: p.id,
             name: p.name,
@@ -85,30 +104,149 @@ export function DataProvider({ children }) {
             phone: p.phone || '',
             department: p.department || 'Information Technology',
             year: p.year || '1st Year',
-            hostel: p.hostel || 'Vikramshilla Boys Hostel',
-            room: p.room || '201',
-            bed: p.bed || 'Bed A',
+            hostel: p.hostel || (p.hostel_id ? 'Assigned Hostel' : 'Pending Assignment'),
+            room: p.room || (p.room_id ? 'Assigned Room' : 'Unallocated'),
+            bed: p.bed || 'Unallocated',
             status: p.status || 'Active',
+            emergencyContact: p.emergency_contact || '',
             attendanceRate: p.attendance_rate ?? 100,
             pendingFees: p.pending_fees ?? 0,
             referenceFacePhoto: p.reference_face_photo_path || null
           }));
-
-          setStudents(prev => {
-            const existingIds = new Set(prev.map(s => s.id));
-            const existingEmails = new Set(prev.map(s => s.email?.toLowerCase()));
-            const toAdd = mapped.filter(m => !existingIds.has(m.id) && !existingEmails.has(m.email?.toLowerCase()));
-            if (toAdd.length === 0) return prev;
-            return [...toAdd, ...prev];
-          });
         }
-      } catch (err) {
-        console.debug('Supabase student sync note:', err.message);
+      } catch (sErr) {
+        console.debug('Supabase profiles query notice:', sErr.message);
       }
     }
 
-    syncSupabaseProfiles();
-    return () => { isMounted = false; };
+    setStudents(prev => {
+      const merged = [...prev];
+      const indexMap = new Map();
+      merged.forEach((s, idx) => {
+        if (s.id) indexMap.set(s.id, idx);
+        if (s.authUserId) indexMap.set(s.authUserId, idx);
+        if (s.email) indexMap.set(s.email.toLowerCase(), idx);
+      });
+
+      // Merge registeredList (highest priority for new user registrations)
+      registeredList.forEach(reg => {
+        const key = reg.id || reg.studentId;
+        const emailKey = reg.email?.toLowerCase();
+        const targetIdx = indexMap.get(key) ?? (emailKey ? indexMap.get(emailKey) : undefined);
+        const item = {
+          id: reg.studentId || reg.id,
+          authUserId: reg.authUserId || reg.id,
+          name: reg.name,
+          email: reg.email,
+          phone: reg.phone || '',
+          department: reg.department || 'Information Technology',
+          year: reg.year || '1st Year',
+          hostel: reg.hostel || 'Pending Assignment',
+          room: reg.room || 'Unallocated',
+          bed: reg.bed || 'Unallocated',
+          status: reg.status || 'Active',
+          emergencyContact: reg.emergencyContact || '',
+          attendanceRate: reg.attendanceRate ?? 100,
+          pendingFees: reg.pendingFees ?? 0,
+          referenceFacePhoto: reg.referenceFacePhoto || null
+        };
+
+        if (targetIdx !== undefined) {
+          merged[targetIdx] = { ...merged[targetIdx], ...item };
+        } else {
+          merged.unshift(item);
+          indexMap.set(key, 0);
+          if (emailKey) indexMap.set(emailKey, 0);
+        }
+      });
+
+      // Merge supabaseStudents
+      supabaseStudents.forEach(sup => {
+        const key = sup.id;
+        const emailKey = sup.email?.toLowerCase();
+        const targetIdx = indexMap.get(key) ?? (emailKey ? indexMap.get(emailKey) : undefined);
+        if (targetIdx !== undefined) {
+          merged[targetIdx] = { ...merged[targetIdx], ...sup };
+        } else {
+          merged.unshift(sup);
+          indexMap.set(key, 0);
+          if (emailKey) indexMap.set(emailKey, 0);
+        }
+      });
+
+      return merged;
+    });
+  };
+
+  // Synchronize student records and activities from Supabase when connected
+  useEffect(() => {
+    let isMounted = true;
+
+    // Initial student synchronization
+    reloadStudents();
+
+    // Listen to real-time events for instant student synchronization across tabs & components
+    const handleSync = () => {
+      if (isMounted) reloadStudents();
+    };
+
+    window.addEventListener('dtil_student_registered', handleSync);
+    window.addEventListener('dtil_student_updated', handleSync);
+    window.addEventListener('storage', handleSync);
+
+    async function syncSupabaseData() {
+      if (!isSupabaseConfigured()) return;
+      try {
+        // Hydrate live notices, complaints, leaves, and visitors from Supabase
+        const [liveNotices, liveComplaints, liveLeaves, liveVisitors] = await Promise.all([
+          getNotices().catch(() => null),
+          getComplaints().catch(() => null),
+          getLeaveRequests().catch(() => null),
+          getVisitors().catch(() => null)
+        ]);
+
+        if (isMounted) {
+          if (Array.isArray(liveNotices) && liveNotices.length > 0) {
+            setNotices(prev => {
+              const liveIds = new Set(liveNotices.map(n => n.id));
+              const nonDuplicatePrev = prev.filter(p => !liveIds.has(p.id));
+              return [...liveNotices, ...nonDuplicatePrev];
+            });
+          }
+          if (Array.isArray(liveComplaints) && liveComplaints.length > 0) {
+            setComplaints(prev => {
+              const liveIds = new Set(liveComplaints.map(c => c.id));
+              const nonDuplicatePrev = prev.filter(p => !liveIds.has(p.id));
+              return [...liveComplaints, ...nonDuplicatePrev];
+            });
+          }
+          if (Array.isArray(liveLeaves) && liveLeaves.length > 0) {
+            setLeaveRequests(prev => {
+              const liveIds = new Set(liveLeaves.map(l => l.id));
+              const nonDuplicatePrev = prev.filter(p => !liveIds.has(p.id));
+              return [...liveLeaves, ...nonDuplicatePrev];
+            });
+          }
+          if (Array.isArray(liveVisitors) && liveVisitors.length > 0) {
+            setVisitors(prev => {
+              const liveIds = new Set(liveVisitors.map(v => v.id));
+              const nonDuplicatePrev = prev.filter(p => !liveIds.has(p.id));
+              return [...liveVisitors, ...nonDuplicatePrev];
+            });
+          }
+        }
+      } catch (err) {
+        console.debug('Supabase sync note:', err.message);
+      }
+    }
+
+    syncSupabaseData();
+    return () => {
+      isMounted = false;
+      window.removeEventListener('dtil_student_registered', handleSync);
+      window.removeEventListener('dtil_student_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
   }, []);
 
   const showToast = (message, type = 'success') => {
@@ -185,8 +323,66 @@ export function DataProvider({ children }) {
     showToast(`Student ${newStudent.name} registered successfully!`, 'success');
   };
 
-  const updateStudent = (id, updatedData) => {
-    setStudents(prev => prev.map(s => (s.id === id ? { ...s, ...updatedData } : s)));
+  const updateStudent = async (id, updatedData) => {
+    // 1. Update React state
+    setStudents(prev => prev.map(s => (s.id === id || s.authUserId === id ? { ...s, ...updatedData } : s)));
+
+    // 2. Update dtil_students in localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem('dtil_students') || '[]');
+      const updatedList = saved.map(s => (s.id === id || s.authUserId === id ? { ...s, ...updatedData } : s));
+      localStorage.setItem('dtil_students', JSON.stringify(updatedList));
+    } catch (e) {
+      console.debug('LocalStorage updateStudent notice:', e);
+    }
+
+    // 3. Update dtil_registered_accounts if present
+    try {
+      const accounts = getRegisteredAccounts();
+      const matched = accounts.find(a => a.user?.id === id || a.user?.studentId === id || a.user?.authUserId === id || a.email?.toLowerCase() === updatedData.email?.toLowerCase());
+      if (matched && matched.user) {
+        matched.user = { ...matched.user, ...updatedData };
+        saveRegisteredAccount(matched);
+      }
+    } catch (e) {
+      console.debug('Registered account update notice:', e);
+    }
+
+    // 4. Update currently logged in student profile if matching
+    try {
+      const curr = JSON.parse(localStorage.getItem('dtil_hostel_user') || 'null');
+      if (curr && (curr.id === id || curr.studentId === id || curr.authUserId === id || curr.email?.toLowerCase() === updatedData.email?.toLowerCase())) {
+        const mergedUser = { ...curr, ...updatedData };
+        localStorage.setItem('dtil_hostel_user', JSON.stringify(mergedUser));
+      }
+    } catch (e) {
+      console.debug('Current user update notice:', e);
+    }
+
+    // 5. Try updating Supabase profiles table if connected
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({
+            hostel: updatedData.hostel,
+            room: updatedData.room,
+            bed: updatedData.bed,
+            status: updatedData.status,
+            phone: updatedData.phone,
+            emergency_contact: updatedData.emergencyContact,
+            updated_at: new Date().toISOString()
+          })
+          .or(`student_id.eq.${id},id.eq.${id}`);
+      } catch (err) {
+        console.debug('Supabase profile update notice:', err.message);
+      }
+    }
+
+    // 6. Notify all open views across application
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dtil_student_updated', { detail: { id, ...updatedData } }));
+    }
     showToast(`Student record updated successfully`, 'success');
   };
 
@@ -281,10 +477,48 @@ export function DataProvider({ children }) {
     if (result.success && result.attendanceRecord && !result.duplicate) {
       setAttendance(prev => {
         const dateStr = result.attendanceRecord.date;
-        const filtered = prev.filter(a => !(a.studentId === studentId && a.date === dateStr));
+        const recStudentId = result.attendanceRecord.studentId || studentId;
+        const filtered = prev.filter(a => !(a.studentId === recStudentId && a.date === dateStr));
         return [result.attendanceRecord, ...filtered];
       });
       showToast('Attendance verified and marked successfully!', 'success');
+
+      // Attempt to save to Supabase attendance tables
+      if (isSupabaseConfigured()) {
+        const stuObj = students.find(s => s.id === studentId || s.studentId === studentId || s.authUserId === studentId);
+        const studentUuid = stuObj?.authUserId || (studentId && studentId.includes('-') && studentId.length === 36 ? studentId : null);
+        if (studentUuid) {
+          try {
+            supabase.from('attendance_records').upsert({
+              student_id: studentUuid,
+              room_number: result.attendanceRecord.room || 'General',
+              date: result.attendanceRecord.date,
+              status: 'Present',
+              marked_by: 'SYSTEM_VERIFIED'
+            }, { onConflict: 'student_id,date' }).then(({ error }) => {
+              if (error) console.debug('Supabase attendance sync notice:', error.message);
+            });
+
+            if (result.presenceRecord) {
+              supabase.from('presence_records').insert({
+                student_id: studentUuid,
+                latitude: result.presenceRecord.latitude,
+                longitude: result.presenceRecord.longitude,
+                location_accuracy: result.presenceRecord.locationAccuracy,
+                distance_from_hostel: result.presenceRecord.distanceFromHostel,
+                face_match_status: result.presenceRecord.faceMatchStatus,
+                location_status: result.presenceRecord.locationStatus,
+                verification_status: result.presenceRecord.verificationStatus,
+                failure_reason: result.presenceRecord.failureReason
+              }).then(({ error }) => {
+                if (error) console.debug('Supabase presence sync notice:', error.message);
+              });
+            }
+          } catch (err) {
+            console.debug('Supabase attendance write notice:', err.message);
+          }
+        }
+      }
     } else if (result.success && result.duplicate) {
       showToast('Attendance was already marked for today.', 'info');
     } else {
@@ -322,6 +556,7 @@ export function DataProvider({ children }) {
 
   const value = {
     students,
+    reloadStudents,
     rooms,
     complaints,
     notices,

@@ -8,6 +8,7 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 // Public Pages
 import LandingPage from '../pages/Landing/LandingPage';
 import LoginPage from '../pages/Login/LoginPage';
+import RegisterPage from '../pages/Register/RegisterPage';
 
 // Admin Pages
 import AdminDashboard from '../pages/admin/AdminDashboard';
@@ -51,8 +52,10 @@ export default function AppRoutes() {
         <Route path="/" element={<LandingPage />} />
       </Route>
 
-      {/* Standalone Login */}
+      {/* Standalone Login & Registration */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/signup" element={<RegisterPage />} />
 
       {/* Admin Portal */}
       <Route path="/admin" element={<DashboardLayout />}>

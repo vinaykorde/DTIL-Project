@@ -332,7 +332,7 @@ export default function StudentDashboard() {
       errorCode: backendResult.error,
       message: backendResult.message,
       details: {
-        studentName: user?.name || 'Vinay Korde',
+        studentName: user?.name || user?.email?.split('@')[0] || 'Student Resident',
         studentId: authenticatedStudentId,
         faceMatch: faceMatchText,
         locationStatus: presenceRec.locationStatus === 'INSIDE' ? 'Inside Hostel' : (presenceRec.locationStatus === 'ACCURACY_POOR' ? 'Accuracy Insufficient' : 'Outside Hostel'),
@@ -357,17 +357,22 @@ export default function StudentDashboard() {
     setPresenceStep('RESULT');
   };
 
-  const studentName = user?.name || 'Vinay Korde';
-  const roomNumber = user?.room || '204';
-  const hostelName = user?.hostel || 'Vikramshilla Boys Hostel';
-  const floor = '2nd Floor';
+  const studentName = user?.name || user?.email?.split('@')[0] || 'Student Resident';
+  const userInitials = studentName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'ST';
+  const roomNumber = user?.room || 'Unallocated';
+  const hostelName = user?.hostel || 'Awaiting Allocation';
+  const bedName = user?.bed || 'Unallocated';
+  const floor = roomNumber !== 'Unallocated' && !isNaN(parseInt(roomNumber[0])) ? `${roomNumber[0]}th Floor` : 'Floor Assigned Upon Allocation';
   const roomType = 'Double Sharing';
-  const attendanceRate = user?.attendanceRate || 88;
-  const pendingFees = user?.pendingFees || 0;
+  const attendanceRate = user?.attendanceRate ?? 100;
+  const pendingFees = user?.pendingFees ?? 0;
 
   // Student specific complaints
   const myComplaints = complaints.filter(
-    c => c.studentName === studentName || c.room === roomNumber
+    c => (user?.id && c.studentId === user.id) ||
+         (user?.studentId && c.studentId === user.studentId) ||
+         c.studentName === studentName ||
+         (roomNumber !== 'Unallocated' && c.room === roomNumber)
   );
   const openComplaintsCount = myComplaints.filter(c => c.status !== 'Resolved').length;
 
@@ -427,7 +432,7 @@ export default function StudentDashboard() {
             Welcome, {studentName}!
           </h2>
           <p style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.925rem', marginTop: '0.25rem' }}>
-            {hostelName} • Room {roomNumber} • {user?.department || 'Information Technology'} ({user?.year || '3rd Year'})
+            {hostelName} • {roomNumber === 'Unallocated' ? 'Room Pending Allocation' : `Room ${roomNumber}`} • {user?.department || 'Information Technology'} ({user?.year || '1st Year'})
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -468,16 +473,16 @@ export default function StudentDashboard() {
           icon={BedDouble}
           color="#2563eb"
           bgColor="#eff6ff"
-          subtext="Bed A (Allotted)"
+          subtext={bedName === 'Unallocated' ? 'Awaiting Room Allocation' : `${bedName} (Allotted)`}
           onClick={() => navigate('/student/my-room')}
         />
         <DashboardCard
           title="Hostel Name"
-          value="Vikramshilla"
+          value={hostelName}
           icon={Building}
           color="#8b5cf6"
           bgColor="#faf5ff"
-          subtext="Boys Hostel Block B"
+          subtext="Campus Housing"
         />
         <DashboardCard
           title="Room Type"
@@ -502,7 +507,7 @@ export default function StudentDashboard() {
           icon={Receipt}
           color="#10b981"
           bgColor="#ecfdf5"
-          subtext="All semester dues cleared"
+          subtext={pendingFees === 0 ? 'All semester dues cleared' : 'Payment pending'}
           onClick={() => navigate('/student/fees')}
         />
         <DashboardCard
@@ -525,7 +530,9 @@ export default function StudentDashboard() {
                 <BedDouble size={20} color="var(--primary-600)" />
                 My Room Allotment
               </div>
-              <div className="card-subtitle">Room {roomNumber}, {floor}</div>
+              <div className="card-subtitle">
+                {roomNumber === 'Unallocated' ? 'Allocation In Progress' : `Room ${roomNumber}, ${floor}`}
+              </div>
             </div>
             <span className="badge badge-primary">Double Sharing</span>
           </div>
@@ -541,7 +548,7 @@ export default function StudentDashboard() {
             </div>
             <div style={{ background: 'var(--slate-50)', padding: '0.85rem', borderRadius: 'var(--radius-md)' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Assigned Bed</div>
-              <div style={{ fontWeight: 700, color: 'var(--primary-700)' }}>Bed A (Left Window)</div>
+              <div style={{ fontWeight: 700, color: 'var(--primary-700)' }}>{bedName}</div>
             </div>
             <div style={{ background: 'var(--slate-50)', padding: '0.85rem', borderRadius: 'var(--radius-md)' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Amenities</div>
@@ -557,28 +564,30 @@ export default function StudentDashboard() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: 'var(--slate-50)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem' }}>
-                    VK
+                    {userInitials}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--slate-900)' }}>Vinay Korde (You)</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>Bed A • IT 3rd Year</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--slate-900)' }}>{studentName} (You)</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>{bedName} • {user?.department || 'Department'} ({user?.year || '1st Year'})</div>
                   </div>
                 </div>
                 <span className="badge badge-success">You</span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: 'var(--slate-50)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--slate-200)', color: 'var(--slate-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem' }}>
-                    AV
+              {roomNumber !== 'Unallocated' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: 'var(--slate-50)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--slate-200)', color: 'var(--slate-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem' }}>
+                      AV
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--slate-900)' }}>Aditya Verma</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>Bed B • CSE 3rd Year</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--slate-900)' }}>Aditya Verma</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>Bed B • CSE 3rd Year</div>
-                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>+91 91234 56781</span>
                 </div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>+91 91234 56781</span>
-              </div>
+              )}
             </div>
           </div>
         </div>

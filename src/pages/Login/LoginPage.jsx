@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   ShieldCheck,
@@ -11,9 +11,13 @@ import {
   Lock,
   Mail,
   Check,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  UserPlus
 } from 'lucide-react';
 import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
 
 export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState(null); // 'admin' | 'student' | 'warden'
@@ -22,10 +26,35 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
   const [error, setError] = useState('');
 
-  const { login, loading } = useAuth();
+  const { login, resetPassword, loading } = useAuth();
   const navigate = useNavigate();
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotMessage('');
+
+    if (!forgotEmail.trim()) {
+      setForgotError('Please enter your registered email address.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await resetPassword(forgotEmail);
+      setForgotMessage(res.message || 'Password reset instructions sent. Please check your inbox.');
+    } catch (err) {
+      setForgotError(err.message || 'Failed to send reset email.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const roles = [
     {
@@ -229,6 +258,38 @@ export default function LoginPage() {
                 })}
               </div>
 
+              {/* New Student Registration Banner */}
+              <div
+                style={{
+                  marginBottom: '1.25rem',
+                  padding: '1.25rem',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1.5px dashed var(--primary-300)',
+                  backgroundColor: '#eff6ff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '1rem'
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--primary-900)' }}>
+                    New Student Resident?
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--slate-600)', marginTop: '0.15rem' }}>
+                    Create your personal hostel student account in less than 2 minutes
+                  </div>
+                </div>
+                <Link
+                  to="/register"
+                  className="btn btn-primary btn-sm"
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+                >
+                  <UserPlus size={16} /> Register as Student
+                </Link>
+              </div>
+
               {/* Demo Notice */}
               <div
                 style={{
@@ -398,7 +459,12 @@ export default function LoginPage() {
                   </label>
                   <button
                     type="button"
-                    onClick={() => alert('Demo Feature: In a production system, this sends an OTP reset link to your registered email.')}
+                    onClick={() => {
+                      setForgotEmail(email);
+                      setForgotMessage('');
+                      setForgotError('');
+                      setForgotModalOpen(true);
+                    }}
                     style={{ color: 'var(--primary-600)', fontWeight: 600 }}
                   >
                     Forgot Password?
@@ -415,6 +481,52 @@ export default function LoginPage() {
                 >
                   Login as {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}
                 </Button>
+
+                {/* Amazon-style Account Creation CTA for Students */}
+                {selectedRole === 'student' && (
+                  <>
+                    <div style={{ position: 'relative', textAlign: 'center', margin: '1.75rem 0 1rem' }}>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '50%',
+                          left: 0,
+                          right: 0,
+                          height: 1,
+                          backgroundColor: 'var(--border-subtle)'
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: 'relative',
+                          backgroundColor: '#ffffff',
+                          padding: '0 0.75rem',
+                          fontSize: '0.8rem',
+                          color: 'var(--slate-500)',
+                          fontWeight: 600
+                        }}
+                      >
+                        New to HostelSync?
+                      </span>
+                    </div>
+
+                    <Link
+                      to="/register"
+                      className="btn btn-outline"
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        fontWeight: 700,
+                        textDecoration: 'none'
+                      }}
+                    >
+                      <UserPlus size={16} /> Create your Student Account
+                    </Link>
+                  </>
+                )}
 
                 {/* Quick Demo Credentials Reminder */}
                 <div
@@ -437,6 +549,99 @@ export default function LoginPage() {
               </form>
             </div>
           )}
+
+          {/* Forgot Password Modal */}
+          <Modal
+            isOpen={forgotModalOpen}
+            onClose={() => setForgotModalOpen(false)}
+            title="Reset Your Password"
+          >
+            <form onSubmit={handleForgotSubmit}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--slate-600)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                Enter your registered student or staff email address. We will send a secure password recovery link to your inbox.
+              </p>
+
+              {forgotError && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--danger-50)',
+                    color: 'var(--danger-700)',
+                    padding: '0.75rem 1rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid #fecaca',
+                    fontSize: '0.85rem',
+                    marginBottom: '1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  <AlertCircle size={16} /> {forgotError}
+                </div>
+              )}
+
+              {forgotMessage && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--success-50)',
+                    color: 'var(--success-700)',
+                    padding: '0.75rem 1rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid #bbf7d0',
+                    fontSize: '0.85rem',
+                    marginBottom: '1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  <CheckCircle2 size={16} /> {forgotMessage}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <div style={{ position: 'relative' }}>
+                  <Mail
+                    size={16}
+                    style={{
+                      position: 'absolute',
+                      left: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--slate-400)'
+                    }}
+                  />
+                  <input
+                    type="email"
+                    className="form-input"
+                    style={{ paddingLeft: '2.5rem' }}
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="student@college.edu"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setForgotModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={forgotLoading}
+                >
+                  Send Reset Link
+                </Button>
+              </div>
+            </form>
+          </Modal>
 
           {/* Footer Navigation Link */}
           <div style={{ textAlign: 'center', marginTop: '1.75rem', fontSize: '0.85rem', color: 'var(--slate-500)' }}>

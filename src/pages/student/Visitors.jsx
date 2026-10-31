@@ -20,16 +20,20 @@ export default function StudentVisitors() {
     notes: 'Visiting to deliver essentials'
   });
 
-  const studentName = user?.name || 'Vinay Korde';
-  const myVisitors = visitors.filter(v => v.studentName === studentName);
+  const studentName = user?.name || user?.email?.split('@')[0] || 'Student Resident';
+  const myVisitors = visitors.filter(
+    v => (user?.id && v.studentId === user.id) ||
+         (user?.studentId && v.studentId === user.studentId) ||
+         v.studentName === studentName
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await addVisitor({
       studentName,
-      studentId: user?.id || 'STU-2024-001',
-      room: user?.room || '204',
-      hostel: user?.hostel || 'Vikramshilla Boys Hostel',
+      studentId: user?.id || user?.studentId || 'STU-2024-001',
+      room: user?.room || 'Unallocated',
+      hostel: user?.hostel || 'Awaiting Allocation',
       visitorName: form.visitorName,
       relationship: form.relationship,
       phone: form.phone,

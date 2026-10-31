@@ -15,19 +15,23 @@ export default function StudentLeaveRequest() {
     fromDate: '',
     toDate: '',
     reason: '',
-    emergencyContact: '+91 98220 11223 (Father)'
+    emergencyContact: user?.emergencyContact || user?.phone || ''
   });
 
-  const studentName = user?.name || 'Vinay Korde';
-  const myLeaves = leaveRequests.filter(l => l.studentName === studentName);
+  const studentName = user?.name || user?.email?.split('@')[0] || 'Student Resident';
+  const myLeaves = leaveRequests.filter(
+    l => (user?.id && l.studentId === user.id) ||
+         (user?.studentId && l.studentId === user.studentId) ||
+         l.studentName === studentName
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await addLeaveRequest({
       studentName,
-      studentId: user?.id || 'STU-2024-001',
-      room: user?.room || '204',
-      hostel: user?.hostel || 'Vikramshilla Boys Hostel',
+      studentId: user?.id || user?.studentId || 'STU-2024-001',
+      room: user?.room || 'Unallocated',
+      hostel: user?.hostel || 'Awaiting Allocation',
       fromDate: form.fromDate,
       toDate: form.toDate,
       reason: form.reason,
@@ -38,7 +42,7 @@ export default function StudentLeaveRequest() {
       fromDate: '',
       toDate: '',
       reason: '',
-      emergencyContact: '+91 98220 11223 (Father)'
+      emergencyContact: user?.emergencyContact || user?.phone || ''
     });
   };
 

@@ -3,11 +3,13 @@ import react from '@vitejs/plugin-react';
 import { handleCreateStudentAccounts } from './src/server/adminStudentServer.js';
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Load all environment variables from .env and .env.local without filtering
   const env = loadEnv(mode, process.cwd(), '');
 
-  const base = process.env.GITHUB_ACTIONS || process.env.GITHUB_PAGES ? '/DTIL-Project/' : (process.env.VITE_BASE || '/');
+  // During development server (command === 'serve'), use root '/' for localhost.
+  // During build, default to GitHub Pages repository base path '/DTIL-Project/'.
+  const base = command === 'serve' ? '/' : (process.env.VITE_BASE || '/DTIL-Project/');
 
   return {
     base,

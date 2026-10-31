@@ -65,7 +65,15 @@ export default function Navbar() {
         </nav>
 
         {/* Action Button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => navigate('/register')}
+            className="desktop-nav"
+          >
+            Register
+          </Button>
           <Button
             variant="primary"
             size="md"
@@ -105,8 +113,15 @@ export default function Navbar() {
           <a href="#features" onClick={() => setMobileMenuOpen(false)} style={{ fontWeight: 600, color: 'var(--slate-800)' }}>Features</a>
           <a href="#contact" onClick={() => setMobileMenuOpen(false)} style={{ fontWeight: 600, color: 'var(--slate-800)' }}>Contact</a>
           <Button
-            variant="primary"
+            variant="outline"
             style={{ width: '100%', marginTop: '0.5rem' }}
+            onClick={() => { setMobileMenuOpen(false); navigate('/register'); }}
+          >
+            Create Student Account
+          </Button>
+          <Button
+            variant="primary"
+            style={{ width: '100%' }}
             onClick={() => { setMobileMenuOpen(false); navigate('/login'); }}
           >
             Portal Login

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import {
   Users,
@@ -18,7 +19,10 @@ import {
   RefreshCw,
   Video,
   Upload,
-  Key
+  Key,
+  Building,
+  BedDouble,
+  ShieldCheck
 } from 'lucide-react';
 import Table from '../../components/common/Table';
 import Button from '../../components/common/Button';
@@ -28,12 +32,24 @@ import BatchStudentModal from '../../components/admin/BatchStudentModal';
 import { createStudentAccounts, generateStrongPassword } from '../../services/studentCreationService';
 
 export default function Students() {
-  const { students, addStudent, addStudentAccounts, updateStudent, deleteStudent } = useData();
+  const { user } = useAuth();
+  const { students, reloadStudents, addStudent, addStudentAccounts, updateStudent, deleteStudent } = useData();
+
+  const isWarden = user?.role === 'warden';
+  const wardenHostel = user?.hostel || 'Vikramshilla Boys Hostel';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [hostelFilter, setHostelFilter] = useState('All');
+  const [hostelFilter, setHostelFilter] = useState(isWarden ? wardenHostel : 'All');
   const [deptFilter, setDeptFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
+  const [isReloading, setIsReloading] = useState(false);
+
+  // Automatically refresh directory on mount to guarantee fresh Supabase sync
+  useEffect(() => {
+    if (reloadStudents) {
+      reloadStudents();
+    }
+  }, []);
 
   // Modals state
   const [viewStudent, setViewStudent] = useState(null);
@@ -122,9 +138,10 @@ export default function Students() {
       phone: '',
       department: 'Computer Science & Engg',
       year: '3rd Year',
-      hostel: 'Vikramshilla Boys Hostel',
+      hostel: isWarden ? wardenHostel : 'Vikramshilla Boys Hostel',
       room: '',
       bed: 'Bed A',
+      status: 'Active',
       emergencyContact: '',
       address: '',
       sleepTime: 'Early',
@@ -144,17 +161,19 @@ export default function Students() {
 
   const handleOpenEdit = (stu) => {
     setEditStudent(stu);
+    const rawRoom = stu.room === 'Unallocated' || stu.room === 'Pending' || stu.room === 'Pending Room' ? '' : (stu.room || '');
     setFormData({
-      name: stu.name,
-      studentId: stu.id,
-      email: stu.email,
+      name: stu.name || '',
+      studentId: stu.studentId || stu.id || '',
+      email: stu.email || '',
       password: '',
-      phone: stu.phone,
-      department: stu.department,
-      year: stu.year,
-      hostel: stu.hostel,
-      room: stu.room,
+      phone: stu.phone || '',
+      department: stu.department || 'Computer Science & Engg',
+      year: stu.year || '3rd Year',
+      hostel: stu.hostel || (isWarden ? wardenHostel : 'Vikramshilla Boys Hostel'),
+      room: rawRoom,
       bed: stu.bed || 'Bed A',
+      status: stu.status || (rawRoom ? 'Active' : 'Pending Assignment'),
       emergencyContact: stu.emergencyContact || '',
       address: stu.address || '',
       sleepTime: stu.sleepTime || 'Early',
@@ -169,7 +188,16 @@ export default function Students() {
   const handleSaveStudent = async (e) => {
     e.preventDefault();
     if (editStudent) {
-      updateStudent(editStudent.id, formData);
+      const hasRoom = Boolean(formData.room && formData.room.trim().length > 0 && formData.room.trim().toLowerCase() !== 'pending');
+      const assignedStatus = hasRoom
+        ? (formData.status === 'Pending Assignment' ? 'Active' : (formData.status || 'Active'))
+        : 'Pending Assignment';
+
+      updateStudent(editStudent.id, {
+        ...formData,
+        room: hasRoom ? formData.room.trim() : 'Unallocated',
+        status: assignedStatus
+      });
       setEditStudent(null);
       resetForm();
     } else {
@@ -223,27 +251,37 @@ export default function Students() {
     }
   };
 
-  // Filtered dataset
+  // Filtered dataset with strict Warden scoping
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
+      const q = searchTerm.toLowerCase();
       const matchesSearch =
-        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.room && s.room.includes(searchTerm));
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.id && s.id.toLowerCase().includes(q)) ||
+        (s.studentId && s.studentId.toLowerCase().includes(q)) ||
+        (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.room && String(s.room).toLowerCase().includes(q));
 
-      const matchesHostel = hostelFilter === 'All' || s.hostel === hostelFilter;
+      // Warden can ONLY see students belonging to their hostel
+      let matchesHostel = true;
+      if (isWarden) {
+        matchesHostel = (s.hostel && s.hostel.toLowerCase().trim() === wardenHostel.toLowerCase().trim());
+      } else {
+        matchesHostel = hostelFilter === 'All' || s.hostel === hostelFilter;
+      }
+
       const matchesDept = deptFilter === 'All' || s.department === deptFilter;
       const matchesYear = yearFilter === 'All' || s.year === yearFilter;
 
       return matchesSearch && matchesHostel && matchesDept && matchesYear;
     });
-  }, [students, searchTerm, hostelFilter, deptFilter, yearFilter]);
+  }, [students, searchTerm, hostelFilter, deptFilter, yearFilter, isWarden, wardenHostel]);
 
   const columns = [
     {
       header: 'Student ID',
       key: 'id',
-      render: (row) => <span style={{ fontWeight: 700, color: 'var(--primary-700)' }}>{row.id}</span>
+      render: (row) => <span style={{ fontWeight: 700, color: 'var(--primary-700)' }}>{row.studentId || row.id}</span>
     },
     {
       header: 'Student Name',
@@ -275,17 +313,43 @@ export default function Students() {
     { header: 'Year', key: 'year' },
     {
       header: 'Hostel & Room',
-      render: (row) => (
-        <div>
-          <span style={{ fontWeight: 600, color: 'var(--slate-800)' }}>Room {row.room}</span>
-          <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)' }}>{row.hostel}</div>
-        </div>
-      )
+      render: (row) => {
+        const isPendingRoom = !row.room || row.room === 'Pending' || row.room === 'Unallocated' || row.room === 'Pending Room' || String(row.room).trim() === '';
+        const isPendingHostel = !row.hostel || row.hostel === 'Pending' || row.hostel === 'Pending Assignment';
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {isPendingRoom ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.72rem', color: '#92400e', backgroundColor: '#fef3c7', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, border: '1px solid #fde68a' }}>
+                  Pending Room
+                </span>
+              ) : (
+                <span style={{ fontWeight: 700, color: 'var(--slate-800)' }}>
+                  Room {row.room} {row.bed ? `(${row.bed})` : ''}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: isPendingHostel ? '#b91c1c' : 'var(--slate-500)', marginTop: '2px' }}>
+              {isPendingHostel ? 'Pending Hostel Assignment' : row.hostel}
+            </div>
+          </div>
+        );
+      }
     },
     { header: 'Contact', key: 'phone' },
     {
       header: 'Status',
-      render: (row) => <StatusBadge status={row.status || 'Active'} size="sm" />
+      render: (row) => {
+        const isPending = !row.room || row.room === 'Pending' || row.room === 'Unallocated' || row.room === 'Pending Room' || row.status === 'Pending Assignment' || !row.hostel;
+        if (isPending) {
+          return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#92400e', backgroundColor: '#fef3c7', padding: '2px 8px', borderRadius: '9999px', fontWeight: 700, border: '1px solid #fde68a' }}>
+              Pending Assignment
+            </span>
+          );
+        }
+        return <StatusBadge status={row.status || 'Active'} size="sm" />;
+      }
     },
     {
       header: 'Actions',
@@ -304,7 +368,7 @@ export default function Students() {
             className="btn-icon"
             onClick={() => handleOpenEdit(row)}
             style={{ color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)' }}
-            title="Edit"
+            title="Assign / Edit Details"
           >
             <Edit2 size={16} />
           </button>
@@ -337,16 +401,35 @@ export default function Students() {
       >
         <div>
           <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--slate-900)' }}>
-            Student Resident Directory
+            {isWarden ? `Student Residents – ${wardenHostel}` : 'Student Resident Directory'}
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)' }}>
-            Manage student registrations, hostel block assignments, and resident profiles
+            {isWarden
+              ? `Manage student registrations, room allocations, and resident profiles for ${wardenHostel}`
+              : 'Manage student registrations, hostel block assignments, and resident profiles across all hostels'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <Button variant="secondary" icon={Users} onClick={() => setIsBatchOpen(true)}>
-            Add Multiple Students (Supabase Auth)
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            loading={isReloading}
+            onClick={async () => {
+              setIsReloading(true);
+              try {
+                if (reloadStudents) await reloadStudents();
+              } finally {
+                setIsReloading(false);
+              }
+            }}
+          >
+            Sync Directory
           </Button>
+          {!isWarden && (
+            <Button variant="secondary" icon={Users} onClick={() => setIsBatchOpen(true)}>
+              Add Multiple Students
+            </Button>
+          )}
           <Button variant="primary" icon={UserPlus} onClick={handleOpenAdd}>
             Register Student
           </Button>
@@ -368,19 +451,38 @@ export default function Students() {
           <Filter size={16} /> Filters:
         </div>
 
-        {/* Hostel Filter */}
-        <select
-          className="form-select w-full-mobile"
-          style={{ width: 'auto', minWidth: '180px' }}
-          value={hostelFilter}
-          onChange={(e) => setHostelFilter(e.target.value)}
-        >
-          <option value="All">All Hostels</option>
-          <option value="Vikramshilla Boys Hostel">Vikramshilla Boys Hostel</option>
-          <option value="Godavari Boys Hostel">Godavari Boys Hostel</option>
-          <option value="Ganga Girls Hostel">Ganga Girls Hostel</option>
-          <option value="Yamuna Girls Hostel">Yamuna Girls Hostel</option>
-        </select>
+        {/* Hostel Scope / Filter */}
+        {isWarden ? (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.4rem 0.8rem',
+              backgroundColor: '#eff6ff',
+              color: '#1e40af',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid #bfdbfe'
+            }}
+          >
+            <Building size={15} /> Scope: {wardenHostel}
+          </div>
+        ) : (
+          <select
+            className="form-select w-full-mobile"
+            style={{ width: 'auto', minWidth: '180px' }}
+            value={hostelFilter}
+            onChange={(e) => setHostelFilter(e.target.value)}
+          >
+            <option value="All">All Hostels</option>
+            <option value="Vikramshilla Boys Hostel">Vikramshilla Boys Hostel</option>
+            <option value="Godavari Boys Hostel">Godavari Boys Hostel</option>
+            <option value="Ganga Girls Hostel">Ganga Girls Hostel</option>
+            <option value="Yamuna Girls Hostel">Yamuna Girls Hostel</option>
+          </select>
+        )}
 
         {/* Dept Filter */}
         <select
@@ -473,11 +575,15 @@ export default function Students() {
             <div className="grid-2" style={{ gap: '1rem', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Hostel Block</div>
-                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.hostel}</div>
+                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.hostel || 'Pending Assignment'}</div>
               </div>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Room & Bed</div>
-                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>Room {viewStudent.room} ({viewStudent.bed || 'Bed A'})</div>
+                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>
+                  {viewStudent.room && viewStudent.room !== 'Unallocated' && viewStudent.room !== 'Pending'
+                    ? `Room ${viewStudent.room} (${viewStudent.bed || 'Bed A'})`
+                    : 'Pending Room Allocation'}
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Year of Study</div>
@@ -489,11 +595,38 @@ export default function Students() {
               </div>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Contact Phone</div>
-                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.phone}</div>
+                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.phone || 'Not provided'}</div>
               </div>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--slate-500)', fontWeight: 600 }}>Parent / Emergency</div>
-                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.emergencyContact || '+91 98220 11223'}</div>
+                <div style={{ fontWeight: 700, color: 'var(--slate-900)' }}>{viewStudent.emergencyContact || 'Not provided'}</div>
+              </div>
+            </div>
+
+            {/* Biometric Face Verification Status Card */}
+            <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', backgroundColor: viewStudent.referenceFacePhoto ? '#f0fdf4' : '#fef2f2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                {viewStudent.referenceFacePhoto ? (
+                  <img
+                    src={viewStudent.referenceFacePhoto}
+                    alt="Biometric Reference"
+                    style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #059669', flexShrink: 0 }}
+                  />
+                ) : (
+                  <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#fee2e2', color: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                    ✕
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: viewStudent.referenceFacePhoto ? '#065f46' : '#991b1b' }}>
+                    {viewStudent.referenceFacePhoto ? '✓ Biometric Face Registered' : '✕ Biometric Face Missing'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: viewStudent.referenceFacePhoto ? '#047857' : '#b91c1c' }}>
+                    {viewStudent.referenceFacePhoto
+                      ? 'Face vector enrolled for campus geofenced attendance verification.'
+                      : 'Student has not registered a face photo yet.'}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -739,32 +872,70 @@ export default function Students() {
             </div>
             <div className="form-group">
               <label className="form-label">Hostel Block *</label>
-              <select
-                className="form-select"
-                value={formData.hostel}
-                onChange={(e) => setFormData({ ...formData, hostel: e.target.value })}
-                required
-              >
-                <option value="Vikramshilla Boys Hostel">Vikramshilla Boys Hostel</option>
-                <option value="Godavari Boys Hostel">Godavari Boys Hostel</option>
-                <option value="Ganga Girls Hostel">Ganga Girls Hostel</option>
-                <option value="Yamuna Girls Hostel">Yamuna Girls Hostel</option>
-              </select>
+              {isWarden ? (
+                <input
+                  type="text"
+                  className="form-input"
+                  value={wardenHostel}
+                  disabled
+                  style={{ backgroundColor: 'var(--slate-100)', color: 'var(--slate-700)', fontWeight: 600 }}
+                />
+              ) : (
+                <select
+                  className="form-select"
+                  value={formData.hostel}
+                  onChange={(e) => setFormData({ ...formData, hostel: e.target.value })}
+                  required
+                >
+                  <option value="Vikramshilla Boys Hostel">Vikramshilla Boys Hostel</option>
+                  <option value="Godavari Boys Hostel">Godavari Boys Hostel</option>
+                  <option value="Ganga Girls Hostel">Ganga Girls Hostel</option>
+                  <option value="Yamuna Girls Hostel">Yamuna Girls Hostel</option>
+                </select>
+              )}
             </div>
           </div>
 
-          <div className="grid-2">
+          <div className="grid-3">
             <div className="form-group">
-              <label className="form-label">Room Number *</label>
+              <label className="form-label">Room Number</label>
               <input
                 type="text"
                 className="form-input"
                 value={formData.room}
                 onChange={(e) => setFormData({ ...formData, room: e.target.value })}
-                required
-                placeholder="e.g. 204"
+                placeholder="e.g. 204 (leave blank for Pending)"
               />
             </div>
+            <div className="form-group">
+              <label className="form-label">Bed Allocation</label>
+              <select
+                className="form-select"
+                value={formData.bed || 'Bed A'}
+                onChange={(e) => setFormData({ ...formData, bed: e.target.value })}
+              >
+                <option value="Bed A">Bed A</option>
+                <option value="Bed B">Bed B</option>
+                <option value="Bed C">Bed C</option>
+                <option value="Bed D">Bed D</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Resident Status</label>
+              <select
+                className="form-select"
+                value={formData.status || 'Active'}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              >
+                <option value="Active">Active</option>
+                <option value="Pending Assignment">Pending Assignment</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Suspended">Suspended</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid-2">
             <div className="form-group">
               <label className="form-label">Emergency / Parent Contact</label>
               <input
@@ -773,6 +944,16 @@ export default function Students() {
                 value={formData.emergencyContact}
                 onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
                 placeholder="+91 98220 11223 (Father)"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Permanent Residence Address</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.address || ''}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="City, State"
               />
             </div>
           </div>

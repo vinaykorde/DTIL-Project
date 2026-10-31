@@ -14,13 +14,13 @@ export default function WardenAttendance() {
 
   // Filter students by selected hostel and room
   const relevantStudents = students.filter(s => {
-    const matchHostel = s.hostel === selectedHostel;
-    const matchRoom = selectedRoom === 'All' || s.room === selectedRoom;
+    const matchHostel = (s.hostel || '').toLowerCase().trim() === (selectedHostel || '').toLowerCase().trim();
+    const matchRoom = selectedRoom === 'All' || String(s.room) === String(selectedRoom);
     return matchHostel && matchRoom;
   });
 
   // Unique rooms in this hostel
-  const roomsInHostel = Array.from(new Set(students.filter(s => s.hostel === selectedHostel).map(s => s.room))).sort();
+  const roomsInHostel = Array.from(new Set(students.filter(s => (s.hostel || '').toLowerCase().trim() === (selectedHostel || '').toLowerCase().trim()).map(s => s.room).filter(Boolean))).sort();
 
   // Local state for attendance toggles synced with database
   const [attendanceMap, setAttendanceMap] = useState({});
@@ -28,7 +28,12 @@ export default function WardenAttendance() {
   useEffect(() => {
     const map = {};
     students.forEach(s => {
-      const existing = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
+      const existing = attendance.find(a =>
+        (a.studentId === s.id ||
+         (s.studentId && a.studentId === s.studentId) ||
+         (s.authUserId && a.studentId === s.authUserId)) &&
+        a.date === selectedDate
+      );
       map[s.id] = existing ? existing.status : 'Present';
     });
     setAttendanceMap(map);
