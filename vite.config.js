@@ -68,7 +68,16 @@ export default defineConfig(({ mode, command }) => {
           if (!fs.existsSync(indexPath)) return;
 
           const html = fs.readFileSync(indexPath, 'utf-8');
-          const routes = ['admin-access', 'warden-access', 'login', 'register', 'signup'];
+          const routes = [
+            'admin-access',
+            'warden-access',
+            'login',
+            'register',
+            'signup',
+            'admin',
+            'warden',
+            'student'
+          ];
 
           routes.forEach(route => {
             const routeDir = path.join(outDir, route);

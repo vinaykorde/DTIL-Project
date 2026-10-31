@@ -4,14 +4,16 @@ import { useAuth } from '../../context/AuthContext';
 
 /**
  * Route guard component that protects role-specific dashboard views.
- * Ensures the user has an active Supabase session and matches the permitted role(s).
+ * Ensures the user has an active session and matches the permitted role(s).
+ * For link-only demonstration access (admin/warden), auto-provisions access seamlessly.
  */
 export default function ProtectedRoute({ allowedRoles, children }) {
-  const { user, role, authInitialized, loading } = useAuth();
+  const { user, role, authInitialized, loading, loginAsRole } = useAuth();
   const location = useLocation();
 
   // 1. Initial auth restoration phase
-  if (!authInitialized || loading) {
+  // If user is already established, skip the waiting spinner immediately
+  if ((!authInitialized || loading) && !user) {
     return (
       <div
         style={{
@@ -43,23 +45,37 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     );
   }
 
-  // 2. Unauthenticated check
-  if (!user || !role) {
-    const redirectPath = allowedRoles?.includes('admin')
-      ? '/admin-access'
-      : allowedRoles?.includes('warden')
-      ? '/warden-access'
-      : '/login';
+  // 2. Active user / role resolution with localStorage fallback
+  const activeUser = user || (() => {
+    try {
+      return JSON.parse(localStorage.getItem('dtil_hostel_user') || 'null');
+    } catch {
+      return null;
+    }
+  })();
+  const activeRole = activeUser?.role || role;
 
-    return <Navigate to={redirectPath} state={{ from: location }} replace />;
+  // 3. Unauthenticated handling:
+  // For demonstration admin and warden access, auto-provision and render immediately without redirects
+  if (!activeUser || !activeRole) {
+    if (allowedRoles?.includes('admin')) {
+      loginAsRole('admin');
+      return children;
+    }
+    if (allowedRoles?.includes('warden')) {
+      loginAsRole('warden');
+      return children;
+    }
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 3. Role authorization check
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+  // 4. Role authorization check
+  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(activeRole)) {
     // Redirect unauthorized user to their own permitted role dashboard
-    return <Navigate to={`/${role}/dashboard`} replace />;
+    return <Navigate to={`/${activeRole}/dashboard`} replace />;
   }
 
   return children;
 }
+
 

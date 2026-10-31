@@ -9,11 +9,46 @@ import {
 } from '../services/api';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
-const AuthContext = createContext(null);
+export const DEMO_ADMIN_PROFILE = {
+  id: 'ADM-001',
+  authUserId: 'ADM-001',
+  studentId: 'ADM-001',
+  name: 'Prof. V. K. Deshpande',
+  role: 'admin',
+  email: 'admin@hostel.com',
+  designation: 'Central Chief Warden & Director of Student Housing',
+  department: 'Campus Administration',
+  phone: '+91 98765 43210',
+  status: 'Active'
+};
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    try {
+export const DEMO_WARDEN_PROFILE = {
+  id: 'W101',
+  authUserId: 'W101',
+  studentId: 'W101',
+  name: 'Dr. Satish Sharma',
+  role: 'warden',
+  email: 'warden@hostel.com',
+  hostel: 'Vikramshilla Boys Hostel',
+  department: 'Mechanical Engineering Dept.',
+  phone: '+91 98234 56789',
+  designation: 'Resident Hostel Warden',
+  status: 'Active'
+};
+
+function getInitialUser() {
+  try {
+    if (typeof window !== 'undefined') {
+      const pathname = (window.location.pathname || '').toLowerCase();
+      if (pathname.includes('admin-access') || pathname.includes('/admin')) {
+        localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_ADMIN_PROFILE));
+        return DEMO_ADMIN_PROFILE;
+      }
+      if (pathname.includes('warden-access') || pathname.includes('/warden')) {
+        localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_WARDEN_PROFILE));
+        return DEMO_WARDEN_PROFILE;
+      }
+
       const saved = localStorage.getItem('dtil_hostel_user');
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -22,14 +57,19 @@ export function AuthProvider({ children }) {
         }
         return parsed;
       }
-      return null;
-    } catch {
-      return null;
     }
-  });
+  } catch (e) {
+    console.debug('Error reading initial user:', e);
+  }
+  return null;
+}
 
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(getInitialUser);
   const [loading, setLoading] = useState(false);
-  const [authInitialized, setAuthInitialized] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(() => Boolean(getInitialUser()));
 
   // Sync user state to localStorage
   useEffect(() => {
@@ -70,7 +110,17 @@ export function AuthProvider({ children }) {
             }));
           }
         } else if (!session?.user && isMounted) {
-          // If a demonstration admin or warden session was saved in localStorage, keep it active
+          // Preserve demonstration admin or warden session if active or requested
+          const pathname = (typeof window !== 'undefined' ? window.location.pathname : '').toLowerCase();
+          if (pathname.includes('admin-access') || pathname.includes('/admin')) {
+            setUser(DEMO_ADMIN_PROFILE);
+            return;
+          }
+          if (pathname.includes('warden-access') || pathname.includes('/warden')) {
+            setUser(DEMO_WARDEN_PROFILE);
+            return;
+          }
+
           const saved = localStorage.getItem('dtil_hostel_user');
           if (saved) {
             try {
@@ -109,6 +159,15 @@ export function AuthProvider({ children }) {
           }
         } else if (event === 'SIGNED_OUT') {
           if (isMounted) {
+            const saved = localStorage.getItem('dtil_hostel_user');
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                if (parsed?.role === 'admin' || parsed?.role === 'warden') {
+                  return; // preserve demo session
+                }
+              } catch (e) {}
+            }
             setUser(null);
             localStorage.removeItem('dtil_hostel_user');
           }
@@ -161,9 +220,11 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       await apiLogout();
+    } catch (e) {
+      console.debug('Logout notice:', e.message);
+    } finally {
       setUser(null);
       localStorage.removeItem('dtil_hostel_user');
-    } finally {
       setLoading(false);
     }
   };
@@ -203,38 +264,17 @@ export function AuthProvider({ children }) {
    */
   const loginAsRole = (demoRole) => {
     if (demoRole === 'admin') {
-      const adminProfile = {
-        id: 'ADM-001',
-        authUserId: 'ADM-001',
-        studentId: 'ADM-001',
-        name: 'Prof. V. K. Deshpande',
-        role: 'admin',
-        email: 'admin@hostel.com',
-        designation: 'Central Chief Warden & Director of Student Housing',
-        department: 'Campus Administration',
-        phone: '+91 98765 43210',
-        status: 'Active'
-      };
-      setUser(adminProfile);
-      localStorage.setItem('dtil_hostel_user', JSON.stringify(adminProfile));
-      return adminProfile;
+      setUser(DEMO_ADMIN_PROFILE);
+      setAuthInitialized(true);
+      setLoading(false);
+      localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_ADMIN_PROFILE));
+      return DEMO_ADMIN_PROFILE;
     } else if (demoRole === 'warden') {
-      const wardenProfile = {
-        id: 'W101',
-        authUserId: 'W101',
-        studentId: 'W101',
-        name: 'Dr. Satish Sharma',
-        role: 'warden',
-        email: 'warden@hostel.com',
-        hostel: 'Vikramshilla Boys Hostel',
-        department: 'Mechanical Engineering Dept.',
-        phone: '+91 98234 56789',
-        designation: 'Resident Hostel Warden',
-        status: 'Active'
-      };
-      setUser(wardenProfile);
-      localStorage.setItem('dtil_hostel_user', JSON.stringify(wardenProfile));
-      return wardenProfile;
+      setUser(DEMO_WARDEN_PROFILE);
+      setAuthInitialized(true);
+      setLoading(false);
+      localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_WARDEN_PROFILE));
+      return DEMO_WARDEN_PROFILE;
     }
   };
 

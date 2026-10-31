@@ -52,43 +52,19 @@ import WardenProfile from '../pages/warden/Profile';
  * to the dashboard without showing a login form or asking for credentials.
  */
 function DirectAccessHandler({ role, target }) {
-  const { loginAsRole } = useAuth();
-  const navigate = useNavigate();
+  const { user, loginAsRole } = useAuth();
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     loginAsRole(role);
-    navigate(target, { replace: true });
-  }, [role, target, loginAsRole, navigate]);
+  }, [role, loginAsRole]);
 
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'var(--slate-50, #f8fafc)',
-        gap: '1rem',
-        fontFamily: 'var(--font-sans, sans-serif)'
-      }}
-    >
-      <div
-        style={{
-          width: '36px',
-          height: '36px',
-          border: '3px solid var(--slate-200, #e2e8f0)',
-          borderTopColor: 'var(--primary-600, #2563eb)',
-          borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite'
-        }}
-      />
-      <span style={{ color: 'var(--slate-600, #475569)', fontSize: '0.875rem', fontWeight: 600 }}>
-        Opening {role.toUpperCase()} Dashboard...
-      </span>
-      <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
+  if (user?.role === role) {
+    return <Navigate to={target} replace />;
+  }
+
+  // Pre-emptively trigger loginAsRole during initial render to eliminate delays
+  loginAsRole(role);
+  return <Navigate to={target} replace />;
 }
 
 export default function AppRoutes() {
@@ -110,7 +86,15 @@ export default function AppRoutes() {
         element={<DirectAccessHandler role="admin" target="/admin/dashboard" />}
       />
       <Route
+        path="/admin-access/*"
+        element={<DirectAccessHandler role="admin" target="/admin/dashboard" />}
+      />
+      <Route
         path="/warden-access"
+        element={<DirectAccessHandler role="warden" target="/warden/dashboard" />}
+      />
+      <Route
+        path="/warden-access/*"
         element={<DirectAccessHandler role="warden" target="/warden/dashboard" />}
       />
 
