@@ -81,7 +81,7 @@ export default function Navbar() {
             iconPosition="right"
             onClick={() => navigate('/login')}
           >
-            Portal Login
+            Login
           </Button>
 
           {/* Mobile hamburger toggle */}
@@ -124,7 +124,7 @@ export default function Navbar() {
             style={{ width: '100%' }}
             onClick={() => { setMobileMenuOpen(false); navigate('/login'); }}
           >
-            Portal Login
+            Login
           </Button>
         </div>
       )}

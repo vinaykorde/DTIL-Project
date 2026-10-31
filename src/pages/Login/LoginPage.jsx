@@ -21,7 +21,7 @@ import Modal from '../../components/common/Modal';
 
 export default function LoginPage({ fixedRole }) {
   const location = useLocation();
-  const { user, role, login, resetPassword, loading, authInitialized } = useAuth();
+  const { user, role, login, logout, resetPassword, loading, authInitialized } = useAuth();
   const navigate = useNavigate();
 
   // Route-based role inference: prop > route path > default 'student'
@@ -43,12 +43,19 @@ export default function LoginPage({ fixedRole }) {
   const [forgotError, setForgotError] = useState('');
   const [error, setError] = useState('');
 
-  // If already authenticated, redirect user to their permitted dashboard
+  // If already authenticated as a student, redirect to Student Dashboard
   useEffect(() => {
-    if (user && role && authInitialized) {
-      navigate(`/${role}/dashboard`, { replace: true });
+    if (user && role === 'student' && authInitialized) {
+      navigate('/student/dashboard', { replace: true });
     }
   }, [user, role, authInitialized, navigate]);
+
+  // If a lingering staff demo session exists when visiting student login, reset it so student login displays
+  useEffect(() => {
+    if (user && (role === 'admin' || role === 'warden')) {
+      logout();
+    }
+  }, [user, role, logout]);
 
   // Keep selectedRole synced if route changes
   useEffect(() => {

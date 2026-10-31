@@ -40,11 +40,14 @@ function getInitialUser() {
   try {
     if (typeof window !== 'undefined') {
       const pathname = (window.location.pathname || '').toLowerCase();
-      if (pathname.includes('admin-access') || pathname.includes('/admin')) {
+      const isAdminPath = pathname.includes('admin-access') || pathname.includes('/admin');
+      const isWardenPath = pathname.includes('warden-access') || pathname.includes('/warden');
+
+      if (isAdminPath) {
         localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_ADMIN_PROFILE));
         return DEMO_ADMIN_PROFILE;
       }
-      if (pathname.includes('warden-access') || pathname.includes('/warden')) {
+      if (isWardenPath) {
         localStorage.setItem('dtil_hostel_user', JSON.stringify(DEMO_WARDEN_PROFILE));
         return DEMO_WARDEN_PROFILE;
       }
@@ -52,8 +55,9 @@ function getInitialUser() {
       const saved = localStorage.getItem('dtil_hostel_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.role === 'warden' && parsed.name?.includes('Sharma')) {
-          parsed.name = 'Dr. Satish Sharma';
+        // Prevent demo staff sessions from leaking into public student portals
+        if (parsed.role === 'admin' || parsed.role === 'warden') {
+          return null;
         }
         return parsed;
       }
@@ -112,11 +116,14 @@ export function AuthProvider({ children }) {
         } else if (!session?.user && isMounted) {
           // Preserve demonstration admin or warden session if active or requested
           const pathname = (typeof window !== 'undefined' ? window.location.pathname : '').toLowerCase();
-          if (pathname.includes('admin-access') || pathname.includes('/admin')) {
+          const isAdminPath = pathname.includes('admin-access') || pathname.includes('/admin');
+          const isWardenPath = pathname.includes('warden-access') || pathname.includes('/warden');
+
+          if (isAdminPath) {
             setUser(DEMO_ADMIN_PROFILE);
             return;
           }
-          if (pathname.includes('warden-access') || pathname.includes('/warden')) {
+          if (isWardenPath) {
             setUser(DEMO_WARDEN_PROFILE);
             return;
           }
@@ -126,6 +133,12 @@ export function AuthProvider({ children }) {
             try {
               const parsed = JSON.parse(saved);
               if (parsed && (parsed.role === 'admin' || parsed.role === 'warden')) {
+                // If visitor is on public student routes, clear lingering demo staff sessions
+                localStorage.removeItem('dtil_hostel_user');
+                setUser(null);
+                return;
+              }
+              if (parsed && parsed.role === 'student') {
                 setUser(parsed);
                 return;
               }
