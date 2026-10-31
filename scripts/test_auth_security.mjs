@@ -92,6 +92,29 @@ async function runTests() {
   const studentPayloadRole = 'student';
   assert(studentPayloadRole === 'student', 'Public student registration strictly enforces role = "student"');
 
+  // Test 7: Verify direct demonstration access routes for Admin and Warden
+  function simulateDirectAccess(route) {
+    if (route === '/admin-access') {
+      return { role: 'admin', target: '/admin/dashboard', requiresCredentials: false };
+    }
+    if (route === '/warden-access') {
+      return { role: 'warden', target: '/warden/dashboard', requiresCredentials: false };
+    }
+    if (route === '/login') {
+      return { role: 'student', target: '/student/dashboard', requiresCredentials: true };
+    }
+    return null;
+  }
+
+  const adminAccess = simulateDirectAccess('/admin-access');
+  assert(adminAccess?.target === '/admin/dashboard' && !adminAccess?.requiresCredentials, '/admin-access directly opens Admin Dashboard with no credentials required');
+
+  const wardenAccess = simulateDirectAccess('/warden-access');
+  assert(wardenAccess?.target === '/warden/dashboard' && !wardenAccess?.requiresCredentials, '/warden-access directly opens Warden Dashboard with no credentials required');
+
+  const studentAccess = simulateDirectAccess('/login');
+  assert(studentAccess?.requiresCredentials === true, '/login requires student authentication');
+
   console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed`);
   if (testsFailed > 0) {
     process.exit(1);

@@ -25,15 +25,8 @@ export default function Sidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    const currentRole = role;
     await logout();
-    if (currentRole === 'admin') {
-      navigate('/admin-access');
-    } else if (currentRole === 'warden') {
-      navigate('/warden-access');
-    } else {
-      navigate('/login');
-    }
+    navigate('/');
   };
 
   // Nav configurations for each role

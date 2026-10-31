@@ -70,7 +70,19 @@ export function AuthProvider({ children }) {
             }));
           }
         } else if (!session?.user && isMounted) {
-          // No active Supabase session: clear local state to prevent session spoofing
+          // If a demonstration admin or warden session was saved in localStorage, keep it active
+          const saved = localStorage.getItem('dtil_hostel_user');
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              if (parsed && (parsed.role === 'admin' || parsed.role === 'warden')) {
+                setUser(parsed);
+                return;
+              }
+            } catch (e) {
+              // ignore parse errors
+            }
+          }
           setUser(null);
           localStorage.removeItem('dtil_hostel_user');
         }
@@ -186,12 +198,53 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Demonstration link-only access activator for Admin and Warden dashboards
+   */
+  const loginAsRole = (demoRole) => {
+    if (demoRole === 'admin') {
+      const adminProfile = {
+        id: 'ADM-001',
+        authUserId: 'ADM-001',
+        studentId: 'ADM-001',
+        name: 'Prof. V. K. Deshpande',
+        role: 'admin',
+        email: 'admin@hostel.com',
+        designation: 'Central Chief Warden & Director of Student Housing',
+        department: 'Campus Administration',
+        phone: '+91 98765 43210',
+        status: 'Active'
+      };
+      setUser(adminProfile);
+      localStorage.setItem('dtil_hostel_user', JSON.stringify(adminProfile));
+      return adminProfile;
+    } else if (demoRole === 'warden') {
+      const wardenProfile = {
+        id: 'W101',
+        authUserId: 'W101',
+        studentId: 'W101',
+        name: 'Dr. Satish Sharma',
+        role: 'warden',
+        email: 'warden@hostel.com',
+        hostel: 'Vikramshilla Boys Hostel',
+        department: 'Mechanical Engineering Dept.',
+        phone: '+91 98234 56789',
+        designation: 'Resident Hostel Warden',
+        status: 'Active'
+      };
+      setUser(wardenProfile);
+      localStorage.setItem('dtil_hostel_user', JSON.stringify(wardenProfile));
+      return wardenProfile;
+    }
+  };
+
   const value = {
     user,
     isAuthenticated: Boolean(user),
     role: user?.role || null,
     register,
     login,
+    loginAsRole,
     logout,
     resetPassword,
     updateProfile,

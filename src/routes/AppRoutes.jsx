@@ -1,5 +1,6 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // Layouts
 import PublicLayout from '../components/layout/PublicLayout';
@@ -45,6 +46,51 @@ import WardenNotices from '../pages/warden/Notices';
 import WardenReports from '../pages/warden/Reports';
 import WardenProfile from '../pages/warden/Profile';
 
+/**
+ * Direct demonstration access handler for Admin & Warden dashboards.
+ * Immediately activates the requested role session and navigates directly
+ * to the dashboard without showing a login form or asking for credentials.
+ */
+function DirectAccessHandler({ role, target }) {
+  const { loginAsRole } = useAuth();
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    loginAsRole(role);
+    navigate(target, { replace: true });
+  }, [role, target, loginAsRole, navigate]);
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'var(--slate-50, #f8fafc)',
+        gap: '1rem',
+        fontFamily: 'var(--font-sans, sans-serif)'
+      }}
+    >
+      <div
+        style={{
+          width: '36px',
+          height: '36px',
+          border: '3px solid var(--slate-200, #e2e8f0)',
+          borderTopColor: 'var(--primary-600, #2563eb)',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }}
+      />
+      <span style={{ color: 'var(--slate-600, #475569)', fontSize: '0.875rem', fontWeight: 600 }}>
+        Opening {role.toUpperCase()} Dashboard...
+      </span>
+      <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -58,9 +104,15 @@ export default function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/signup" element={<RegisterPage />} />
 
-      {/* Separate Private Access Routes */}
-      <Route path="/admin-access" element={<LoginPage fixedRole="admin" />} />
-      <Route path="/warden-access" element={<LoginPage fixedRole="warden" />} />
+      {/* Direct Demonstration Access Routes */}
+      <Route
+        path="/admin-access"
+        element={<DirectAccessHandler role="admin" target="/admin/dashboard" />}
+      />
+      <Route
+        path="/warden-access"
+        element={<DirectAccessHandler role="warden" target="/warden/dashboard" />}
+      />
 
       {/* Admin Portal (Strictly Admin only) */}
       <Route
