@@ -31,7 +31,7 @@ import { analyzeImageQuality, detectFacePresence, loadFaceApiModels } from '../.
 import { getCurrentDeviceLocation, getRefinedDeviceLocation } from '../../services/geolocationService';
 
 export default function StudentDashboard() {
-  const { user, switchRole } = useAuth();
+  const { user } = useAuth();
   const { complaints, notices, addComplaint, students, hostelSettings, verifyAndRecordPresence } = useData();
   const navigate = useNavigate();
 
@@ -1002,20 +1002,10 @@ export default function StudentDashboard() {
                   <div style={{ lineHeight: 1.4, marginBottom: '0.65rem' }}>
                     Your trusted reference photo has not been enrolled by the Warden yet. A registered reference face is required for biometric presence verification.
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={async () => {
-                      stopPresenceCamera();
-                      setIsPresenceModalOpen(false);
-                      await switchRole('warden');
-                      navigate('/warden/students');
-                    }}
-                    style={{ fontSize: '0.78rem', fontWeight: 700, borderColor: '#d97706', color: '#92400e' }}
-                  >
-                    Switch to Warden to Enroll Face Photo →
-                  </Button>
+                  <div style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>ℹ️</span>
+                    <span>Please contact your hostel warden to capture and enroll your trusted reference biometric photo.</span>
+                  </div>
                 </div>
               )}
 

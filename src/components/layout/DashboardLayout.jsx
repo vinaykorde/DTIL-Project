@@ -2,24 +2,14 @@ import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from '../common/Sidebar';
 import { useAuth } from '../../context/AuthContext';
-import { useData } from '../../context/DataContext';
-import { Menu, Bell, RefreshCw, UserCheck, Shield } from 'lucide-react';
+import { Menu, Bell, Shield } from 'lucide-react';
 import Toast from '../common/Toast';
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, role, switchRole } = useAuth();
-  const { resetToMockData } = useData();
+  const { user, role } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
-  const handleRoleSwitch = async (e) => {
-    const newRole = e.target.value;
-    if (newRole !== role) {
-      await switchRole(newRole);
-      navigate(`/${newRole}/dashboard`);
-    }
-  };
 
   // Human friendly page title from pathname
   const getPageTitle = () => {
@@ -75,54 +65,45 @@ export default function DashboardLayout() {
             </div>
           </div>
 
-          {/* Right: Quick Demo Controls & Profile */}
+          {/* Right: Authenticated User Info & Role Badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {/* Quick Demo Role Switcher */}
+            {/* Verified Role Badge */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.5rem',
-                backgroundColor: 'var(--slate-100)',
+                gap: '0.45rem',
+                backgroundColor:
+                  role === 'admin'
+                    ? '#eff6ff'
+                    : role === 'warden'
+                    ? '#ecfdf5'
+                    : '#fef3c7',
                 padding: '0.35rem 0.75rem',
                 borderRadius: 'var(--radius-full)',
-                border: '1px solid var(--slate-200)'
+                border: `1px solid ${
+                  role === 'admin'
+                    ? '#bfdbfe'
+                    : role === 'warden'
+                    ? '#a7f3d0'
+                    : '#fde68a'
+                }`,
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color:
+                  role === 'admin'
+                    ? '#1d4ed8'
+                    : role === 'warden'
+                    ? '#047857'
+                    : '#b45309',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em'
               }}
-              title="Quickly preview as different roles for DTIL presentation"
+              title={`Authenticated as ${role}`}
             >
-              <UserCheck size={16} color="var(--primary-600)" />
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--slate-600)' }} className="hide-on-mobile">
-                Role:
-              </span>
-              <select
-                value={role || 'student'}
-                onChange={handleRoleSwitch}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  fontWeight: 700,
-                  fontSize: '0.8rem',
-                  color: 'var(--slate-800)',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  textTransform: 'capitalize'
-                }}
-              >
-                <option value="admin">Admin</option>
-                <option value="student">Student</option>
-                <option value="warden">Warden</option>
-              </select>
+              <Shield size={14} />
+              <span>{role || 'User'}</span>
             </div>
-
-            {/* Reset Demo Data helper */}
-            <button
-              onClick={resetToMockData}
-              className="btn-icon"
-              title="Reset mock data to fresh demo state"
-              style={{ color: 'var(--slate-500)' }}
-            >
-              <RefreshCw size={17} />
-            </button>
 
             {/* User Avatar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>

@@ -474,218 +474,97 @@ export async function resetPasswordForEmail(email) {
     };
   }
 
-  await delay(200);
-  return {
-    success: true,
-    message: `Password reset link simulated for ${cleanEmail}. (Demo Mode)`
-  };
+  throw new Error('Database service is not configured. Please verify your Supabase configuration.');
 }
 
 /**
  * Login user with role
- * Checks Supabase Auth first, maps to profiles table, and falls back to demo accounts
+ * Real Supabase Authentication only. Verifies password with Supabase Auth,
+ * validates user role from public.profiles table, and rejects unauthorized access.
  * Body: { email, password, role }
- * Returns: { user: { id, studentId, name, email, role, ... }, token: "jwt_token_here" }
+ * Returns: { user: { id, studentId, name, email, role, ... }, token: string }
  */
 export async function loginUser(email, password, role) {
   if (!email || !password || !role) {
-    throw new Error('Please provide email, password, and select a role.');
+    throw new Error('Please provide your email address, password, and select a role.');
   }
 
-  const cleanEmail = email.trim();
+  const cleanEmail = email.trim().toLowerCase();
 
-  // 1. If Supabase is configured, authenticate via Supabase Auth
-  if (isSupabaseConfigured()) {
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password
-      });
+  if (!isSupabaseConfigured()) {
+    throw new Error('Database service is not configured. Please check your Supabase environment variables.');
+  }
 
-      if (!authError && authData?.user) {
-        // Query profile details from profiles table
-        let { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authData.user.id)
-          .maybeSingle();
+  // 1. Authenticate via real Supabase Auth
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email: cleanEmail,
+    password
+  });
 
-        // If profile row doesn't exist yet, insert it automatically
-        if (!profile) {
-          const initialProfile = {
-            id: authData.user.id,
-            email: authData.user.email,
-            name: authData.user.user_metadata?.name || cleanEmail.split('@')[0],
-            student_id: authData.user.user_metadata?.student_id || null,
-            phone: authData.user.user_metadata?.phone || null,
-            department: authData.user.user_metadata?.department || 'Information Technology',
-            year: authData.user.user_metadata?.year || '1st Year',
-            role: authData.user.user_metadata?.role || 'student',
-            status: 'Active',
-            attendance_rate: 100,
-            pending_fees: 0
-          };
-
-          const { data: insertedProfile } = await supabase
-            .from('profiles')
-            .upsert(initialProfile)
-            .select()
-            .maybeSingle();
-
-          profile = insertedProfile || initialProfile;
-        }
-
-        const userRole = profile?.role || authData.user.user_metadata?.role || 'student';
-
-        // Guard against role mismatch (e.g. student logging into admin portal)
-        if (role && userRole !== role) {
-          throw new Error(
-            `Access Denied: Your account role is "${userRole}", but you are attempting to sign in to the "${role.toUpperCase()}" portal.`
-          );
-        }
-
-        const userObj = {
-          id: authData.user.id,
-          studentId: profile?.student_id || authData.user.user_metadata?.student_id || authData.user.id,
-          name: profile?.name || authData.user.user_metadata?.name || cleanEmail.split('@')[0],
-          email: profile?.email || authData.user.email,
-          role: userRole,
-          phone: profile?.phone || authData.user.user_metadata?.phone || '',
-          department: profile?.department || authData.user.user_metadata?.department || 'Information Technology',
-          year: profile?.year || authData.user.user_metadata?.year || '1st Year',
-          hostel: profile?.hostel || (profile?.hostel_id ? 'Assigned Hostel' : 'Awaiting Hostel Allocation'),
-          room: profile?.room || (profile?.room_id ? 'Assigned Room' : 'Unallocated'),
-          bed: profile?.bed || 'Unallocated',
-          emergencyContact: profile?.emergency_contact || '',
-          address: profile?.address || '',
-          attendanceRate: profile?.attendance_rate ?? 100,
-          pendingFees: profile?.pending_fees ?? 0,
-          referenceFacePhoto: profile?.reference_face_photo_path || null,
-          status: profile?.status || 'Active',
-          sleepTime: profile?.sleep_time || 'Early',
-          studyTime: profile?.study_time || 'Morning',
-          cleanliness: profile?.cleanliness || 'Medium',
-          foodPreference: profile?.food_preference || 'Vegetarian',
-          lightPreference: profile?.light_preference || 'Bright',
-          roommateStatus: profile?.roommate_status || 'Looking'
-        };
-
-        return {
-          token: authData.session?.access_token || 'supabase-session-token',
-          user: userObj
-        };
-      } else if (authError) {
-        // Check if user is in registered accounts
-        const registered = getRegisteredAccounts().find(
-          a => a.email.toLowerCase() === cleanEmail.toLowerCase() && a.password === password
-        );
-        if (registered) {
-          const userRole = registered.user?.role || 'student';
-          if (role && userRole !== role) {
-            throw new Error(
-              `Access Denied: Your account role is "${userRole}", but you are attempting to sign in to the "${role.toUpperCase()}" portal.`
-            );
-          }
-          return {
-            token: `token-${registered.user.id}`,
-            user: registered.user
-          };
-        }
-
-        // Check if demo fallback credentials were used
-        const isDemoAccount = (
-          (cleanEmail === 'admin@hostel.com' && role === 'admin') ||
-          (cleanEmail === 'warden@hostel.com' && role === 'warden') ||
-          (cleanEmail === 'student@hostel.com' && role === 'student')
-        ) && password === 'demo123';
-
-        if (!isDemoAccount) {
-          throw new Error(authError.message || 'Invalid email or password.');
-        }
-      }
-    } catch (err) {
-      if (err.message?.includes('Access Denied:')) {
-        throw err;
-      }
-
-      const registered = getRegisteredAccounts().find(
-        a => a.email.toLowerCase() === cleanEmail.toLowerCase() && a.password === password
-      );
-      if (registered) {
-        const userRole = registered.user?.role || 'student';
-        if (role && userRole !== role) {
-          throw new Error(
-            `Access Denied: Your account role is "${userRole}", but you are attempting to sign in to the "${role.toUpperCase()}" portal.`
-          );
-        }
-        return {
-          token: `token-${registered.user.id}`,
-          user: registered.user
-        };
-      }
-
-      const isDemoAccount = (
-        (cleanEmail === 'admin@hostel.com' && role === 'admin') ||
-        (cleanEmail === 'warden@hostel.com' && role === 'warden') ||
-        (cleanEmail === 'student@hostel.com' && role === 'student')
-      ) && password === 'demo123';
-
-      if (!isDemoAccount) {
-        throw err;
-      }
+  if (authError || !authData?.user) {
+    const rawError = authError?.message || '';
+    if (rawError.toLowerCase().includes('invalid login credentials')) {
+      throw new Error('Invalid email or password. Please verify your credentials and try again.');
     }
+    if (rawError.toLowerCase().includes('email not confirmed')) {
+      throw new Error('Email address has not been confirmed. Please check your inbox or confirm in Supabase.');
+    }
+    throw new Error(rawError || 'Authentication failed. Please check your email and password.');
   }
 
-  await delay(150);
+  // 2. Fetch authenticated profile from public.profiles table
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authData.user.id)
+    .maybeSingle();
 
-  // 2. Demo fallback for evaluation
-  if (role === 'admin') {
-    return {
-      token: 'demo-jwt-admin-token-xyz',
-      user: {
-        id: 'ADM-001',
-        name: 'Prof. V. K. Deshpande',
-        role: 'admin',
-        email: cleanEmail || 'admin@hostel.com',
-        designation: 'Chief Warden & Director of Student Housing',
-        department: 'Campus Administration',
-        phone: '+91 98765 43210'
-      }
-    };
-  } else if (role === 'warden') {
-    return {
-      token: 'demo-jwt-warden-token-xyz',
-      user: {
-        id: 'W101',
-        name: 'Satish Sir',
-        role: 'warden',
-        email: cleanEmail || 'warden@hostel.com',
-        hostel: 'Vikramshilla Boys Hostel',
-        department: 'Mechanical Engg.',
-        phone: '+91 98234 56789'
-      }
-    };
-  } else {
-    return {
-      token: 'demo-jwt-student-token-xyz',
-      user: {
-        id: 'STU-2024-001',
-        name: 'Vinay Korde',
-        role: 'student',
-        email: cleanEmail || 'student@hostel.com',
-        hostel: 'Vikramshilla Boys Hostel',
-        room: 'V-616',
-        bed: 'Bed A',
-        department: 'Information Technology',
-        year: '2nd Year',
-        phone: '1234567890',
-        attendanceRate: 88,
-        pendingFees: 0,
-        emergencyContact: '+91 98220 11223 (Father)',
-        address: 'Plot 42, Shivajinagar, Pune, Maharashtra - 411005'
-      }
-    };
+  // Determine user role strictly from database profile, falling back to auth user metadata
+  const userRole = profile?.role || authData.user.user_metadata?.role || 'student';
+
+  // 3. Strict Role-Based Access Control verification:
+  // The user's database role MUST match the selected portal role
+  if (role && userRole !== role) {
+    // Immediately terminate the session to prevent unprivileged access
+    await supabase.auth.signOut();
+    throw new Error(
+      `Access Denied: Your account role is "${userRole}", which does not have permission to access the "${role.toUpperCase()}" portal.`
+    );
   }
+
+  // 4. Construct authenticated user object
+  const userObj = {
+    id: authData.user.id,
+    authUserId: authData.user.id,
+    studentId: profile?.student_id || authData.user.user_metadata?.student_id || authData.user.id,
+    name: profile?.name || authData.user.user_metadata?.name || cleanEmail.split('@')[0],
+    email: profile?.email || authData.user.email,
+    role: userRole,
+    phone: profile?.phone || authData.user.user_metadata?.phone || '',
+    department: profile?.department || authData.user.user_metadata?.department || (userRole === 'admin' ? 'Campus Administration' : 'Information Technology'),
+    year: profile?.year || authData.user.user_metadata?.year || '1st Year',
+    hostel: profile?.hostel || (profile?.hostel_id ? 'Assigned Hostel' : (userRole === 'student' ? 'Awaiting Allocation' : 'All Hostels')),
+    room: profile?.room || (profile?.room_id ? 'Assigned Room' : 'Unallocated'),
+    bed: profile?.bed || 'Unallocated',
+    emergencyContact: profile?.emergency_contact || '',
+    address: profile?.address || '',
+    attendanceRate: profile?.attendance_rate ?? 100,
+    pendingFees: profile?.pending_fees ?? 0,
+    referenceFacePhoto: profile?.reference_face_photo_path || null,
+    status: profile?.status || 'Active',
+    designation: profile?.designation || (userRole === 'admin' ? 'System Administrator' : userRole === 'warden' ? 'Hostel Warden' : null),
+    sleepTime: profile?.sleep_time || 'Early',
+    studyTime: profile?.study_time || 'Morning',
+    cleanliness: profile?.cleanliness || 'Medium',
+    foodPreference: profile?.food_preference || 'Vegetarian',
+    lightPreference: profile?.light_preference || 'Bright',
+    roommateStatus: profile?.roommate_status || 'Looking'
+  };
+
+  return {
+    token: authData.session?.access_token || `token-${authData.user.id}`,
+    user: userObj
+  };
 }
 
 /**

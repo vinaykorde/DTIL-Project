@@ -69,6 +69,10 @@ export function AuthProvider({ children }) {
               studentId: session.user.user_metadata?.student_id || session.user.id
             }));
           }
+        } else if (!session?.user && isMounted) {
+          // No active Supabase session: clear local state to prevent session spoofing
+          setUser(null);
+          localStorage.removeItem('dtil_hostel_user');
         }
       } catch (err) {
         console.debug('Session check notice:', err.message);
@@ -92,7 +96,10 @@ export function AuthProvider({ children }) {
             }
           }
         } else if (event === 'SIGNED_OUT') {
-          if (isMounted) setUser(null);
+          if (isMounted) {
+            setUser(null);
+            localStorage.removeItem('dtil_hostel_user');
+          }
         }
       });
 
@@ -179,18 +186,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  /**
-   * Quick switch for demo presentation (Admin / Warden / Student)
-   */
-  const switchRole = async (newRole) => {
-    const defaultEmails = {
-      admin: 'admin@hostel.com',
-      warden: 'warden@hostel.com',
-      student: 'student@hostel.com'
-    };
-    return await login(defaultEmails[newRole] || 'demo@hostel.com', 'demo123', newRole);
-  };
-
   const value = {
     user,
     isAuthenticated: Boolean(user),
@@ -200,7 +195,6 @@ export function AuthProvider({ children }) {
     logout,
     resetPassword,
     updateProfile,
-    switchRole,
     loading,
     authInitialized,
     isSupabaseConnected: isSupabaseConfigured()

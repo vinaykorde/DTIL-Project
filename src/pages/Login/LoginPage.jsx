@@ -61,9 +61,8 @@ export default function LoginPage() {
       id: 'admin',
       title: 'ADMIN',
       icon: ShieldCheck,
-      description: 'Manage the complete hostel system',
+      description: 'Manage the complete hostel system and room allocations',
       badge: 'Full Access',
-      defaultEmail: 'admin@hostel.com',
       color: '#2563eb',
       bgLight: '#eff6ff'
     },
@@ -73,7 +72,6 @@ export default function LoginPage() {
       icon: GraduationCap,
       description: 'Access your hostel information and services',
       badge: 'Resident Access',
-      defaultEmail: 'student@hostel.com',
       color: '#059669',
       bgLight: '#ecfdf5'
     },
@@ -83,7 +81,6 @@ export default function LoginPage() {
       icon: Building,
       description: 'Manage hostel activities and student issues',
       badge: 'Hostel Supervisor',
-      defaultEmail: 'warden@hostel.com',
       color: '#d97706',
       bgLight: '#fffbeb'
     }
@@ -92,29 +89,33 @@ export default function LoginPage() {
   const handleRoleSelect = (roleId) => {
     setSelectedRole(roleId);
     setError('');
-    // Pre-populate with demo email for easy evaluation
-    const roleObj = roles.find(r => r.id === roleId);
-    if (roleObj) {
-      setEmail(roleObj.defaultEmail);
-      setPassword('demo123');
-    }
+    setEmail('');
+    setPassword('');
   };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!email.trim() || !password.trim()) {
-      setError('Please provide your email / username and password.');
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      setError('Please provide your registered email address and password.');
       return;
     }
 
     try {
-      await login(email, password, selectedRole);
-      // Navigate to respective dashboard
-      navigate(`/${selectedRole}/dashboard`);
+      const loggedInUser = await login(cleanEmail, cleanPassword, selectedRole);
+      if (loggedInUser?.role !== selectedRole) {
+        setError(
+          `Access Denied: Your account role is "${loggedInUser?.role}", which does not have permission to access the "${selectedRole.toUpperCase()}" portal.`
+        );
+        return;
+      }
+      navigate(`/${selectedRole}/dashboard`, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.');
+      setError(err.message || 'Authentication failed. Please verify your email and password.');
     }
   };
 
@@ -288,24 +289,6 @@ export default function LoginPage() {
                 >
                   <UserPlus size={16} /> Register as Student
                 </Link>
-              </div>
-
-              {/* Demo Notice */}
-              <div
-                style={{
-                  backgroundColor: 'var(--slate-50)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '0.75rem 1rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.8rem',
-                  color: 'var(--slate-600)'
-                }}
-              >
-                <Sparkles size={16} color="var(--primary-600)" />
-                <span>Presentation Mode active: Click any card to preview the full role workflow.</span>
               </div>
             </div>
           ) : (
@@ -527,25 +510,6 @@ export default function LoginPage() {
                     </Link>
                   </>
                 )}
-
-                {/* Quick Demo Credentials Reminder */}
-                <div
-                  style={{
-                    marginTop: '1.5rem',
-                    padding: '0.85rem',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--slate-50)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: '0.775rem',
-                    color: 'var(--slate-600)'
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: '0.25rem', color: 'var(--slate-800)' }}>
-                    Demo Credentials (pre-loaded):
-                  </div>
-                  <div>Email: <strong>{roles.find(r => r.id === selectedRole)?.defaultEmail}</strong></div>
-                  <div>Password: <strong>demo123</strong> (any password works)</div>
-                </div>
               </form>
             </div>
           )}

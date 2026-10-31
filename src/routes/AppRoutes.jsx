@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 // Layouts
 import PublicLayout from '../components/layout/PublicLayout';
 import DashboardLayout from '../components/layout/DashboardLayout';
+import ProtectedRoute from '../components/common/ProtectedRoute';
 
 // Public Pages
 import LandingPage from '../pages/Landing/LandingPage';
@@ -57,8 +58,15 @@ export default function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/signup" element={<RegisterPage />} />
 
-      {/* Admin Portal */}
-      <Route path="/admin" element={<DashboardLayout />}>
+      {/* Admin Portal (Strictly Admin only) */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboard />} />
         <Route path="students" element={<AdminStudents />} />
@@ -71,8 +79,15 @@ export default function AppRoutes() {
         <Route path="profile" element={<AdminProfile />} />
       </Route>
 
-      {/* Student Portal */}
-      <Route path="/student" element={<DashboardLayout />}>
+      {/* Student Portal (Strictly Student only) */}
+      <Route
+        path="/student"
+        element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="/student/dashboard" replace />} />
         <Route path="dashboard" element={<StudentDashboard />} />
         <Route path="profile" element={<StudentProfile />} />
@@ -85,8 +100,15 @@ export default function AppRoutes() {
         <Route path="visitors" element={<StudentVisitors />} />
       </Route>
 
-      {/* Warden Portal */}
-      <Route path="/warden" element={<DashboardLayout />}>
+      {/* Warden Portal (Strictly Warden only) */}
+      <Route
+        path="/warden"
+        element={
+          <ProtectedRoute allowedRoles={['warden']}>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="/warden/dashboard" replace />} />
         <Route path="dashboard" element={<WardenDashboard />} />
         <Route path="students" element={<WardenStudents />} />
