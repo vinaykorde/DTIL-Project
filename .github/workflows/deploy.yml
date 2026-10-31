@@ -36,10 +36,11 @@ jobs:
 
       - name: Build project
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://twijezwruonhqqpxbhiz.supabase.co' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_oZKO7Rd8pznL4AYzyo2PQw_IzsEtVNK' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_oZKO7Rd8pznL4AYzyo2PQw_IzsEtVNK' }}
           GITHUB_ACTIONS: 'true'
+          GITHUB_PAGES: 'true'
         run: npm run build
 
       - name: Setup GitHub Pages
